@@ -1,41 +1,60 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../contexts/AuthContext';
 import Button from '../../components/ui/Button';
 import Icon from '../../components/AppIcon';
 import RegistrationForm from './components/RegistrationForm';
 import TrustSignals from './components/TrustSignals';
 import TermsModal from './components/TermsModal';
-import EmailVerificationModal from './components/EmailVerificationModal';
+
 
 const Register = () => {
   const navigate = useNavigate();
-  const [isLoading, setIsLoading] = useState(false);
-  const [showTermsModal, setShowTermsModal] = useState(false);
-  const [showPrivacyModal, setShowPrivacyModal] = useState(false);
-  const [showVerificationModal, setShowVerificationModal] = useState(false);
+  const { signUp, user } = useAuth();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [showTerms, setShowTerms] = useState(false);
+  const [showEmailVerification, setShowEmailVerification] = useState(false);
   const [registrationEmail, setRegistrationEmail] = useState('');
 
-  const handleRegistration = async (formData) => {
-    setIsLoading(true);
-    setRegistrationEmail(formData?.email);
-
-    // Simulate API call
-    setTimeout(() => {
-      setIsLoading(false);
-      setShowVerificationModal(true);
-    }, 2000);
-  };
-
-  const handleVerificationComplete = () => {
-    setShowVerificationModal(false);
-    // Simulate successful verification and redirect
-    setTimeout(() => {
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (user) {
       navigate('/main-dashboard');
-    }, 1000);
-  };
+    }
+  }, [user, navigate]);
 
-  const handleLoginRedirect = () => {
-    navigate('/login');
+  const handleRegister = async (formData) => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const { data, error: signUpError } = await signUp(
+        formData?.email, 
+        formData?.password, 
+        {
+          fullName: formData?.fullName,
+          organization: formData?.organization,
+          role: formData?.role
+        }
+      );
+      
+      if (signUpError) {
+        setError(signUpError);
+        return;
+      }
+
+      if (data?.user) {
+        setRegistrationEmail(formData?.email);
+        setShowEmailVerification(true);
+      }
+    } catch (err) {
+      setError('An unexpected error occurred during registration. Please try again.');
+      console.log('Registration error:', err?.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -59,7 +78,7 @@ const Register = () => {
               <span className="text-sm text-muted-foreground">Already have an account?</span>
               <Button
                 variant="outline"
-                onClick={handleLoginRedirect}
+                onClick={() => navigate('/login')}
                 iconName="LogIn"
                 iconPosition="left"
               >
@@ -130,8 +149,8 @@ const Register = () => {
             {/* Registration Form */}
             <div className="bg-card border border-border rounded-lg p-6 shadow-elevation">
               <RegistrationForm 
-                onSubmit={handleRegistration}
-                isLoading={isLoading}
+                onSubmit={handleRegister}
+                isLoading={loading}
               />
             </div>
 
@@ -140,14 +159,14 @@ const Register = () => {
               <p>
                 By creating an account, you agree to our{' '}
                 <button
-                  onClick={() => setShowTermsModal(true)}
+                  onClick={() => setShowTerms(true)}
                   className="text-primary hover:underline"
                 >
                   Terms of Service
                 </button>
                 {' '}and{' '}
                 <button
-                  onClick={() => setShowPrivacyModal(true)}
+                  onClick={() => setShowEmailVerification(true)}
                   className="text-primary hover:underline"
                 >
                   Privacy Policy
@@ -178,10 +197,10 @@ const Register = () => {
               Enterprise-grade vulnerability management for security professionals
             </p>
             <div className="flex items-center justify-center space-x-6 text-sm text-muted-foreground">
-              <button onClick={() => setShowTermsModal(true)} className="hover:text-foreground">
+              <button onClick={() => setShowTerms(true)} className="hover:text-foreground">
                 Terms of Service
               </button>
-              <button onClick={() => setShowPrivacyModal(true)} className="hover:text-foreground">
+              <button onClick={() => setShowEmailVerification(true)} className="hover:text-foreground">
                 Privacy Policy
               </button>
               <span>support@vulcanscan.com</span>
@@ -194,20 +213,14 @@ const Register = () => {
       </footer>
       {/* Modals */}
       <TermsModal
-        isOpen={showTermsModal}
-        onClose={() => setShowTermsModal(false)}
+        isOpen={showTerms}
+        onClose={() => setShowTerms(false)}
         type="terms"
       />
       <TermsModal
-        isOpen={showPrivacyModal}
-        onClose={() => setShowPrivacyModal(false)}
+        isOpen={showEmailVerification}
+        onClose={() => setShowEmailVerification(false)}
         type="privacy"
-      />
-      <EmailVerificationModal
-        isOpen={showVerificationModal}
-        onClose={() => setShowVerificationModal(false)}
-        email={registrationEmail}
-        onVerificationComplete={handleVerificationComplete}
       />
     </div>
   );

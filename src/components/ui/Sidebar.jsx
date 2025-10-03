@@ -1,20 +1,35 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Icon from '../AppIcon';
 import Button from './Button';
 import Select from './Select';
+import { Link, useLocation, useNavigate } from 'react-router-dom'; // Add useNavigate back
+import { useAuth } from '../../contexts/AuthContext';
 
-const Sidebar = ({ isOpen = false, onClose, className = '' }) => {
-  const [selectedWorkspace, setSelectedWorkspace] = useState('acme-corp');
+const Sidebar = ({ 
+  isOpen = false, 
+  onClose, 
+  className = '',
+  workspaces = [],
+  selectedWorkspace,
+  onWorkspaceChange 
+}) => {
+  // Add the useState hook back for scanProgress
   const [scanProgress, setScanProgress] = useState({
     assets: 2,
     vulnerabilities: 5
   });
 
-  const workspaceOptions = [
-    { value: 'acme-corp', label: 'Acme Corporation', description: 'Primary client workspace' },
-    { value: 'tech-solutions', label: 'Tech Solutions Inc', description: 'Secondary client' },
-    { value: 'global-finance', label: 'Global Finance Ltd', description: 'Financial services client' },
-  ];
+  const { userProfile, signOut } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const workspaceOptions = useMemo(() => {
+    return workspaces.map(ws => ({
+      value: ws.id,
+      label: ws.name,
+      description: ws.client_name
+    }));
+  }, [workspaces]);
 
   const navigationItems = [
     {
@@ -49,17 +64,6 @@ const Sidebar = ({ isOpen = false, onClose, className = '' }) => {
     { label: 'New Scan', icon: 'Play', variant: 'default' },
     { label: 'Generate Report', icon: 'FileText', variant: 'outline' }
   ];
-
-  const handleNavigation = (path) => {
-    window.location.href = path;
-    if (onClose) onClose();
-  };
-
-  const handleWorkspaceChange = (value) => {
-    setSelectedWorkspace(value);
-    // Simulate workspace context change
-    console.log('Switching to workspace:', value);
-  };
 
   const handleQuickAction = (action) => {
     console.log('Quick action:', action);
@@ -127,7 +131,7 @@ const Sidebar = ({ isOpen = false, onClose, className = '' }) => {
               label="Active Workspace"
               options={workspaceOptions}
               value={selectedWorkspace}
-              onChange={handleWorkspaceChange}
+              onChange={onWorkspaceChange}
               searchable
               className="w-full"
             />
@@ -140,19 +144,20 @@ const Sidebar = ({ isOpen = false, onClose, className = '' }) => {
             </div>
             
             {navigationItems?.map((item) => {
-              const isActive = window.location?.pathname === item?.path;
-              
+              const isActive = location.pathname === item.path;
+
               return (
-                <button
-                  key={item?.path}
-                  onClick={() => handleNavigation(item?.path)}
+                <Link
+                  key={item.path}
+                  to={item.path}
+                  onClick={onClose}
                   className={`
                     flex items-center justify-between w-full p-3 rounded-lg text-left
                     transition-smooth group
-                    ${isActive 
-                      ? 'bg-primary text-primary-foreground shadow-sm' 
-                      : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-                    }
+                      ${location.pathname === item.path
+                        ? 'bg-primary text-primary-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+                      }
                   `}
                 >
                   <div className="flex items-center space-x-3">
@@ -179,7 +184,7 @@ const Sidebar = ({ isOpen = false, onClose, className = '' }) => {
                       {item?.badge}
                     </div>
                   )}
-                </button>
+                </Link>
               );
             })}
           </nav>
@@ -214,16 +219,16 @@ const Sidebar = ({ isOpen = false, onClose, className = '' }) => {
               </div>
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-medium text-foreground truncate">
-                  Security Analyst
+                  {userProfile?.full_name || 'User'}
                 </div>
                 <div className="text-xs text-muted-foreground truncate">
-                  analyst@vulcanscan.com
+                  {userProfile?.email || 'No email'}
                 </div>
               </div>
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={() => handleNavigation('/login')}
+                onClick={signOut}
                 className="text-muted-foreground hover:text-destructive"
               >
                 <Icon name="LogOut" size={16} />

@@ -1,22 +1,30 @@
 import React, { useState } from 'react';
-import Button from '../../../components/ui/Button';
+
 import Input from '../../../components/ui/Input';
-import Select from '../../../components/ui/Select';
+import Button from '../../../components/ui/Button';
 import { Checkbox } from '../../../components/ui/Checkbox';
+import Select from '../../../components/ui/Select';
 
 
-const RegistrationForm = ({ onSubmit, isLoading }) => {
+const RegistrationForm = ({ onSubmit, loading = false, error = null }) => {
   const [formData, setFormData] = useState({
     companyName: '',
     fullName: '',
     email: '',
+    organization: '',
+    role: 'analyst',
     password: '',
     confirmPassword: '',
     specialization: '',
     clientCount: '',
+    acceptTerms: false,
+    subscribeNewsletter: false,
     agreeToTerms: false,
     agreeToPrivacy: false
   });
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [validationErrors, setValidationErrors] = useState({});
 
   const [errors, setErrors] = useState({});
   const [passwordStrength, setPasswordStrength] = useState({
@@ -138,10 +146,16 @@ const RegistrationForm = ({ onSubmit, isLoading }) => {
     return Object.keys(newErrors)?.length === 0;
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e?.preventDefault();
     if (validateForm()) {
-      onSubmit(formData);
+      await onSubmit({
+        fullName: formData?.fullName,
+        email: formData?.email,
+        password: formData?.password,
+        organization: formData?.organization,
+        role: formData?.role
+      });
     }
   };
 
@@ -305,13 +319,13 @@ const RegistrationForm = ({ onSubmit, isLoading }) => {
       <Button
         type="submit"
         variant="default"
-        loading={isLoading}
+        loading={loading}
         fullWidth
         iconName="UserPlus"
         iconPosition="left"
         className="mt-8"
       >
-        {isLoading ? 'Creating Account...' : 'Create Account'}
+        {loading ? 'Creating Account...' : 'Create Account'}
       </Button>
     </form>
   );

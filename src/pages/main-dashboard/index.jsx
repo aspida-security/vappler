@@ -1,5 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../contexts/AuthContext';
+import { workspaceService } from '../../services/workspaceService';
+import { vulnerabilityService } from '../../services/vulnerabilityService';
+import { assetService } from '../../services/assetService';
+import { scanService } from '../../services/scanService';
 import Header from '../../components/ui/Header';
 import Sidebar from '../../components/ui/Sidebar';
 import TopVulnerabilitiesCard from './components/TopVulnerabilitiesCard';
@@ -11,185 +16,19 @@ import QuickActions from './components/QuickActions';
 
 const MainDashboard = () => {
   const navigate = useNavigate();
+  const { user, userProfile, isAuthenticated } = useAuth();
+  const [loading, setLoading] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [selectedWorkspace, setSelectedWorkspace] = useState('acme-corp');
+  const [selectedWorkspace, setSelectedWorkspace] = useState(null);
+  const [workspaces, setWorkspaces] = useState([]);
+  const [topVulnerabilities, setTopVulnerabilities] = useState([]);
+  const [recentScans, setRecentScans] = useState([]);
+  const [vulnerableHosts, setVulnerableHosts] = useState([]);
+  const [workspaceStats, setWorkspaceStats] = useState({});
   const [refreshKey, setRefreshKey] = useState(0);
+  const [error, setError] = useState(null);
 
-  // Mock data for workspaces
-  const workspaces = [
-    {
-      id: 'acme-corp',
-      name: 'Acme Corporation',
-      assets: 245,
-      lastScan: '2 hours ago',
-      description: 'Primary enterprise client'
-    },
-    {
-      id: 'tech-solutions',
-      name: 'Tech Solutions Inc',
-      assets: 89,
-      lastScan: '1 day ago',
-      description: 'Technology consulting firm'
-    },
-    {
-      id: 'global-finance',
-      name: 'Global Finance Ltd',
-      assets: 156,
-      lastScan: '3 hours ago',
-      description: 'Financial services provider'
-    }
-  ];
-
-  // Mock data for top vulnerabilities
-  const topVulnerabilities = [
-    {
-      id: 'CVE-2024-0001',
-      title: 'Critical Remote Code Execution in Apache HTTP Server',
-      severity: 'Critical',
-      cvssScore: 9.8,
-      affectedHosts: 12,
-      discoveredDate: 'Sep 28, 2025',
-      description: `A critical vulnerability in Apache HTTP Server allows remote attackers to execute arbitrary code through malformed HTTP requests.\nThis affects versions 2.4.0 through 2.4.58 and requires immediate patching.`
-    },
-    {
-      id: 'CVE-2024-0002',
-      title: 'SQL Injection in Custom Web Application',
-      severity: 'High',
-      cvssScore: 8.5,
-      affectedHosts: 8,
-      discoveredDate: 'Sep 27, 2025',
-      description: `Multiple SQL injection vulnerabilities found in the customer portal application.\nAttackers can extract sensitive database information and potentially gain administrative access.`
-    },
-    {
-      id: 'CVE-2024-0003',
-      title: 'Privilege Escalation in Windows Server',
-      severity: 'High',
-      cvssScore: 8.2,
-      affectedHosts: 15,
-      discoveredDate: 'Sep 26, 2025',
-      description: `Local privilege escalation vulnerability in Windows Server 2019 and 2022.\nAllows authenticated users to gain SYSTEM-level privileges through registry manipulation.`
-    },
-    {
-      id: 'CVE-2024-0004',
-      title: 'Cross-Site Scripting in Web Portal',
-      severity: 'Medium',
-      cvssScore: 6.1,
-      affectedHosts: 5,
-      discoveredDate: 'Sep 25, 2025',
-      description: `Stored XSS vulnerability in the employee portal allows attackers to inject malicious scripts.\nCould lead to session hijacking and data theft from authenticated users.`
-    },
-    {
-      id: 'CVE-2024-0005',
-      title: 'Weak SSL/TLS Configuration',
-      severity: 'Medium',
-      cvssScore: 5.9,
-      affectedHosts: 22,
-      discoveredDate: 'Sep 24, 2025',
-      description: `Multiple servers are using outdated SSL/TLS protocols and weak cipher suites.\nThis could allow man-in-the-middle attacks and data interception.`
-    }
-  ];
-
-  // Mock data for recent scans
-  const recentScans = [
-    {
-      id: 'scan-001',
-      name: 'Full Network Scan - Production',
-      status: 'running',
-      workspace: 'Acme Corp',
-      targets: 245,
-      startTime: '2 hours ago',
-      progress: 67
-    },
-    {
-      id: 'scan-002',
-      name: 'Web Application Security Test',
-      status: 'completed',
-      workspace: 'Tech Solutions',
-      targets: 12,
-      duration: 45,
-      startTime: '4 hours ago'
-    },
-    {
-      id: 'scan-003',
-      name: 'PCI Compliance Scan',
-      status: 'completed',
-      workspace: 'Global Finance',
-      targets: 89,
-      duration: 120,
-      startTime: '1 day ago'
-    },
-    {
-      id: 'scan-004',
-      name: 'External Perimeter Scan',
-      status: 'failed',
-      workspace: 'Acme Corp',
-      targets: 15,
-      startTime: '2 days ago'
-    },
-    {
-      id: 'scan-005',
-      name: 'Internal Network Discovery',
-      status: 'scheduled',
-      workspace: 'Tech Solutions',
-      targets: 156,
-      startTime: 'Tomorrow 9:00 AM'
-    }
-  ];
-
-  // Mock data for vulnerable hosts
-  const vulnerableHosts = [
-    {
-      id: 'host-001',
-      hostname: 'web-server-01.acme.local',
-      ip: '192.168.1.100',
-      os: 'Windows Server 2019',
-      riskScore: 9.2,
-      vulnerabilities: 15,
-      openPorts: 8,
-      lastScan: '2 hours ago'
-    },
-    {
-      id: 'host-002',
-      hostname: 'db-primary.acme.local',
-      ip: '192.168.1.50',
-      os: 'Ubuntu 20.04 LTS',
-      riskScore: 8.7,
-      vulnerabilities: 12,
-      openPorts: 5,
-      lastScan: '2 hours ago'
-    },
-    {
-      id: 'host-003',
-      hostname: 'mail-server.acme.local',
-      ip: '192.168.1.25',
-      os: 'CentOS 8',
-      riskScore: 8.1,
-      vulnerabilities: 9,
-      openPorts: 12,
-      lastScan: '3 hours ago'
-    },
-    {
-      id: 'host-004',
-      ip: '192.168.1.200',
-      os: 'Windows 10 Pro',
-      riskScore: 7.5,
-      vulnerabilities: 8,
-      openPorts: 6,
-      lastScan: '1 day ago'
-    },
-    {
-      id: 'host-005',
-      hostname: 'backup-server.acme.local',
-      ip: '192.168.1.75',
-      os: 'Windows Server 2016',
-      riskScore: 7.2,
-      vulnerabilities: 11,
-      openPorts: 4,
-      lastScan: '1 day ago'
-    }
-  ];
-
-  // Mock data for risk trend
+  // Mock risk trend data (this could come from a reporting service)
   const riskTrendData = [
     { date: 'Sep 15', riskScore: 6.2, vulnerabilities: 89 },
     { date: 'Sep 18', riskScore: 7.1, vulnerabilities: 102 },
@@ -199,13 +38,12 @@ const MainDashboard = () => {
     { date: 'Sep 29', riskScore: 8.5, vulnerabilities: 156 }
   ];
 
-  // Mock workspace stats
-  const workspaceStats = {
-    totalAssets: 245,
-    criticalVulns: 23,
-    activeScans: 2,
-    riskScore: 8.5
-  };
+  // Load initial data
+  useEffect(() => {
+    if (isAuthenticated) {
+      loadDashboardData();
+    }
+ }, [isAuthenticated, refreshKey, loadDashboardData]);
 
   // Auto-refresh dashboard data
   useEffect(() => {
@@ -216,6 +54,70 @@ const MainDashboard = () => {
     return () => clearInterval(interval);
   }, []);
 
+  const loadDashboardData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Load workspaces
+      const { data: workspaceData, error: workspaceError } = await workspaceService?.getWorkspaces();
+      if (workspaceError) {
+        throw new Error(workspaceError);
+      }
+
+      setWorkspaces(workspaceData || []);
+      
+      // Select first workspace if none selected
+      if (workspaceData?.length > 0 && !selectedWorkspace) {
+        setSelectedWorkspace(workspaceData?.[0]?.id);
+        await loadWorkspaceData(workspaceData?.[0]?.id);
+      } else if (selectedWorkspace) {
+        await loadWorkspaceData(selectedWorkspace);
+      }
+    } catch (error) {
+      console.log('Dashboard loading error:', error?.message);
+      setError('Failed to load dashboard data. Please try refreshing the page.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadWorkspaceData = async (workspaceId) => {
+    try {
+      // Load workspace statistics
+      const { data: stats, error: statsError } = await workspaceService?.getWorkspaceStats(workspaceId);
+      if (statsError) {
+        throw new Error(statsError);
+      }
+      setWorkspaceStats(stats || {});
+
+      // Load top vulnerabilities
+      const { data: vulnData, error: vulnError } = await vulnerabilityService?.getTopVulnerabilities(workspaceId, 5);
+      if (vulnError) {
+        throw new Error(vulnError);
+      }
+      setTopVulnerabilities(vulnData || []);
+
+      // Load vulnerable hosts
+      const { data: hostsData, error: hostsError } = await assetService?.getVulnerableHosts(workspaceId, 5);
+      if (hostsError) {
+        throw new Error(hostsError);
+      }
+      setVulnerableHosts(hostsData || []);
+
+      // Load recent scans
+      const { data: scansData, error: scansError } = await scanService?.getRecentScans(workspaceId, 5);
+      if (scansError) {
+        throw new Error(scansError);
+      }
+      setRecentScans(scansData || []);
+
+    } catch (error) {
+      console.log('Workspace data loading error:', error?.message);
+      setError('Failed to load workspace data.');
+    }
+  };
+
   const handleSidebarToggle = () => {
     setIsSidebarOpen(!isSidebarOpen);
   };
@@ -224,10 +126,9 @@ const MainDashboard = () => {
     setIsSidebarOpen(false);
   };
 
-  const handleWorkspaceChange = (workspaceId) => {
+  const handleWorkspaceChange = async (workspaceId) => {
     setSelectedWorkspace(workspaceId);
-    // In a real app, this would trigger data refresh for the new workspace
-    console.log('Switching to workspace:', workspaceId);
+    await loadWorkspaceData(workspaceId);
   };
 
   const handleViewDetails = (type, id = null) => {
@@ -266,10 +167,51 @@ const MainDashboard = () => {
     navigate('/reports');
   };
 
+  // Show loading state
+  if (loading && !workspaces?.length) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Loading dashboard...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show error state
+  if (error) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center max-w-md">
+          <div className="text-destructive mb-4">
+            <svg className="w-12 h-12 mx-auto" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+            </svg>
+          </div>
+          <h2 className="text-lg font-semibold text-foreground mb-2">Dashboard Error</h2>
+          <p className="text-muted-foreground mb-4">{error}</p>
+          <button 
+            onClick={loadDashboardData}
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
+          >
+            Try Again
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background">
       <Header onMenuToggle={handleSidebarToggle} isMenuOpen={isSidebarOpen} />
-      <Sidebar isOpen={isSidebarOpen} onClose={handleSidebarClose} />
+        <Sidebar
+          isOpen={isSidebarOpen}
+          onClose={handleSidebarClose}
+          workspaces={workspaces}
+          selectedWorkspace={selectedWorkspace}
+          onWorkspaceChange={handleWorkspaceChange}
+        />
       <main className="lg:ml-80 pt-16">
         <div className="p-6 space-y-6">
           {/* Page Header */}
@@ -277,7 +219,7 @@ const MainDashboard = () => {
             <div>
               <h1 className="text-3xl font-bold text-foreground">Security Dashboard</h1>
               <p className="text-muted-foreground mt-1">
-                Comprehensive vulnerability management and security monitoring
+                Welcome back, {userProfile?.full_name || user?.email}. Comprehensive vulnerability management and security monitoring.
               </p>
             </div>
             <div className="text-sm text-muted-foreground">
@@ -286,12 +228,14 @@ const MainDashboard = () => {
           </div>
 
           {/* Workspace Selector */}
-          <WorkspaceSelector
-            workspaces={workspaces}
-            selectedWorkspace={selectedWorkspace}
-            onWorkspaceChange={handleWorkspaceChange}
-            stats={workspaceStats}
-          />
+          {workspaces?.length > 0 && (
+            <WorkspaceSelector
+              workspaces={workspaces}
+              selectedWorkspace={selectedWorkspace}
+              onWorkspaceChange={handleWorkspaceChange}
+              stats={workspaceStats}
+            />
+          )}
 
           {/* Quick Actions */}
           <QuickActions
@@ -301,31 +245,46 @@ const MainDashboard = () => {
           />
 
           {/* Main Dashboard Grid */}
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-            {/* Top Vulnerabilities */}
-            <TopVulnerabilitiesCard
-              vulnerabilities={topVulnerabilities}
-              onViewDetails={handleViewDetails}
-            />
+          {selectedWorkspace ? (
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+              {/* Top Vulnerabilities */}
+              <TopVulnerabilitiesCard
+                vulnerabilities={topVulnerabilities}
+                onViewDetails={handleViewDetails}
+                loading={loading}
+              />
 
-            {/* Recent Scan Activity */}
-            <RecentScanActivity
-              scans={recentScans}
-              onViewDetails={handleViewDetails}
-            />
+              {/* Recent Scan Activity */}
+              <RecentScanActivity
+                scans={recentScans}
+                onViewDetails={handleViewDetails}
+                loading={loading}
+              />
 
-            {/* Most Vulnerable Hosts */}
-            <VulnerableHostsCard
-              hosts={vulnerableHosts}
-              onViewDetails={handleViewDetails}
-            />
+              {/* Most Vulnerable Hosts */}
+              <VulnerableHostsCard
+                hosts={vulnerableHosts}
+                onViewDetails={handleViewDetails}
+                loading={loading}
+              />
 
-            {/* Risk Trend Chart */}
-            <RiskTrendChart
-              data={riskTrendData}
-              onViewDetails={handleViewDetails}
-            />
-          </div>
+              {/* Risk Trend Chart */}
+              <RiskTrendChart
+                data={riskTrendData}
+                onViewDetails={handleViewDetails}
+              />
+            </div>
+          ) : (
+            <div className="text-center py-12">
+              <div className="text-muted-foreground mb-4">
+                <svg className="w-12 h-12 mx-auto" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M4 4a2 2 0 012-2h8a2 2 0 012 2v12a1 1 0 01-1.447.894L10 15.118l-4.553 1.776A1 1 0 014 16V4zm2 3a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-medium text-foreground mb-2">No Workspaces Available</h3>
+              <p className="text-muted-foreground">Create a workspace to start managing vulnerabilities and assets.</p>
+            </div>
+          )}
 
           {/* Footer */}
           <div className="text-center py-8 border-t border-border">

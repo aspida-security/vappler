@@ -1,64 +1,42 @@
 import React, { useState, useEffect } from 'react';
 import { Helmet } from 'react-helmet';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../contexts/AuthContext';
 import LoginForm from './components/LoginForm';
 import SecurityBadges from './components/SecurityBadges';
 import LoginHeader from './components/LoginHeader';
 import BackgroundPattern from './components/BackgroundPattern';
 
 const Login = () => {
-  const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
+  const { signIn, loading, user } = useAuth();
   const [error, setError] = useState(null);
 
-  // Mock credentials for demonstration
-  const mockCredentials = {
-    email: "admin@vulcanscan.com",
-    password: "VulcanScan2024!"
-  };
-
+  // Redirect if already authenticated
   useEffect(() => {
-    // Clear any existing session data
-    localStorage.removeItem('vulcan_session');
-    localStorage.removeItem('vulcan_user');
-  }, []);
+    if (user) {
+      navigate('/main-dashboard');
+    }
+  }, [user, navigate]);
 
   const handleLogin = async (formData) => {
-    setLoading(true);
     setError(null);
 
     try {
-      // Simulate API call delay
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      const { data, error: signInError } = await signIn(formData?.email, formData?.password);
+      
+      if (signInError) {
+        setError(signInError);
+        return;
+      }
 
-      // Validate credentials
-      if (formData?.email === mockCredentials?.email && formData?.password === mockCredentials?.password) {
-        // Mock successful authentication
-        const userData = {
-          id: 1,
-          email: formData?.email,
-          name: "Security Analyst",
-          role: "admin",
-          workspace: "acme-corp",
-          loginTime: new Date()?.toISOString()
-        };
-
-        // Store session data
-        localStorage.setItem('vulcan_session', JSON.stringify({
-          token: 'mock_jwt_token_' + Date.now(),
-          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000)?.toISOString(),
-          rememberMe: formData?.rememberMe
-        }));
-        
-        localStorage.setItem('vulcan_user', JSON.stringify(userData));
-
-        // Redirect to dashboard
-        window.location.href = '/main-dashboard';
-      } else {
-        throw new Error('Invalid email or password. Please use admin@vulcanscan.com with password VulcanScan2024!');
+      if (data?.user) {
+        // Successful login - redirect will happen via useEffect
+        console.log('Login successful for user:', data?.user?.email);
       }
     } catch (err) {
-      setError(err?.message);
-    } finally {
-      setLoading(false);
+      setError('An unexpected error occurred. Please try again.');
+      console.log('Login error:', err?.message);
     }
   };
 
@@ -91,8 +69,8 @@ const Login = () => {
             <div className="text-center">
               <p className="text-sm font-medium text-primary mb-2">Demo Credentials</p>
               <div className="space-y-1 text-xs text-muted-foreground">
-                <p><strong>Email:</strong> admin@vulcanscan.com</p>
-                <p><strong>Password:</strong> VulcanScan2024!</p>
+                <p><strong>Admin:</strong> admin@vulcanscan.com / VulcanScan2024!</p>
+                <p><strong>Analyst:</strong> analyst@vulcanscan.com / AnalystPass123!</p>
               </div>
             </div>
           </div>
