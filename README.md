@@ -21,15 +21,17 @@ A modern React-based project utilizing the latest frontend technologies and tool
 
 ## 🛠️ Installation
 
-1. Install dependencies:
-   ```bash
+**Install dependencies:**
+
+```bash
    npm install
    # or
    yarn install
    ```
-   
-2. Start the development server:
-   ```bash
+
+**Start the development server:**
+
+```bash
    npm start
    # or
    yarn start
@@ -37,7 +39,7 @@ A modern React-based project utilizing the latest frontend technologies and tool
 
 ## 📁 Project Structure
 
-```
+```markdown
 react_app/
 ├── public/             # Static assets
 ├── src/
@@ -88,7 +90,6 @@ This project uses Tailwind CSS for styling. The configuration includes:
 ## 📱 Responsive Design
 
 The app is built with responsive design using Tailwind CSS breakpoints.
-
 
 ## 📦 Deployment
 

@@ -28,7 +28,7 @@ const MainDashboard = () => {
   const [refreshKey, setRefreshKey] = useState(0);
   const [error, setError] = useState(null);
 
-  // Mock risk trend data (this could come from a reporting service)
+  // Mock risk trend data
   const riskTrendData = [
     { date: 'Sep 15', riskScore: 6.2, vulnerabilities: 89 },
     { date: 'Sep 18', riskScore: 7.1, vulnerabilities: 102 },
@@ -38,33 +38,42 @@ const MainDashboard = () => {
     { date: 'Sep 29', riskScore: 8.5, vulnerabilities: 156 }
   ];
 
-  // Load initial data
-  useEffect(() => {
-    if (isAuthenticated) {
-      loadDashboardData();
+  const loadWorkspaceData = useCallback(async (workspaceId) => {
+    try {
+      // Load workspace statistics
+      const { data: stats, error: statsError } = await workspaceService?.getWorkspaceStats(workspaceId);
+      if (statsError) throw new Error(statsError);
+      setWorkspaceStats(stats || {});
+
+      // Load top vulnerabilities
+      const { data: vulnData, error: vulnError } = await vulnerabilityService?.getTopVulnerabilities(workspaceId, 5);
+      if (vulnError) throw new Error(vulnError);
+      setTopVulnerabilities(vulnData || []);
+
+      // Load vulnerable hosts
+      const { data: hostsData, error: hostsError } = await assetService?.getVulnerableHosts(workspaceId, 5);
+      if (hostsError) throw new Error(hostsError);
+      setVulnerableHosts(hostsData || []);
+
+      // Load recent scans
+      const { data: scansData, error: scansError } = await scanService?.getRecentScans(workspaceId, 5);
+      if (scansError) throw new Error(scansError);
+      setRecentScans(scansData || []);
+
+    } catch (error) {
+      console.log('Workspace data loading error:', error?.message);
+      setError('Failed to load workspace data.');
     }
- }, [isAuthenticated, refreshKey, loadDashboardData]);
+  }, []); // Empty dependency array is OK here as service imports are static
 
-  // Auto-refresh dashboard data
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setRefreshKey(prev => prev + 1);
-    }, 30000); // Refresh every 30 seconds
-
-    return () => clearInterval(interval);
-  }, []);
-
-  const loadDashboardData = async () => {
+  const loadDashboardData = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
 
       // Load workspaces
       const { data: workspaceData, error: workspaceError } = await workspaceService?.getWorkspaces();
-      if (workspaceError) {
-        throw new Error(workspaceError);
-      }
-
+      if (workspaceError) throw new Error(workspaceError);
       setWorkspaces(workspaceData || []);
       
       // Select first workspace if none selected
@@ -80,51 +89,26 @@ const MainDashboard = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedWorkspace, loadWorkspaceData]);
 
-  const loadWorkspaceData = async (workspaceId) => {
-    try {
-      // Load workspace statistics
-      const { data: stats, error: statsError } = await workspaceService?.getWorkspaceStats(workspaceId);
-      if (statsError) {
-        throw new Error(statsError);
-      }
-      setWorkspaceStats(stats || {});
-
-      // Load top vulnerabilities
-      const { data: vulnData, error: vulnError } = await vulnerabilityService?.getTopVulnerabilities(workspaceId, 5);
-      if (vulnError) {
-        throw new Error(vulnError);
-      }
-      setTopVulnerabilities(vulnData || []);
-
-      // Load vulnerable hosts
-      const { data: hostsData, error: hostsError } = await assetService?.getVulnerableHosts(workspaceId, 5);
-      if (hostsError) {
-        throw new Error(hostsError);
-      }
-      setVulnerableHosts(hostsData || []);
-
-      // Load recent scans
-      const { data: scansData, error: scansError } = await scanService?.getRecentScans(workspaceId, 5);
-      if (scansError) {
-        throw new Error(scansError);
-      }
-      setRecentScans(scansData || []);
-
-    } catch (error) {
-      console.log('Workspace data loading error:', error?.message);
-      setError('Failed to load workspace data.');
+  // Load initial data
+  useEffect(() => {
+    if (isAuthenticated) {
+      loadDashboardData();
     }
-  };
+  }, [isAuthenticated, refreshKey, loadDashboardData]);
 
-  const handleSidebarToggle = () => {
-    setIsSidebarOpen(!isSidebarOpen);
-  };
+  // Auto-refresh dashboard data
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setRefreshKey(prev => prev + 1);
+    }, 30000); // Refresh every 30 seconds
 
-  const handleSidebarClose = () => {
-    setIsSidebarOpen(false);
-  };
+    return () => clearInterval(interval);
+  }, []);
+  
+  const handleSidebarToggle = () => setIsSidebarOpen(!isSidebarOpen);
+  const handleSidebarClose = () => setIsSidebarOpen(false);
 
   const handleWorkspaceChange = async (workspaceId) => {
     setSelectedWorkspace(workspaceId);
@@ -133,51 +117,20 @@ const MainDashboard = () => {
 
   const handleViewDetails = (type, id = null) => {
     switch (type) {
-      case 'vulnerabilities': navigate('/vulnerability-management');
-        break;
-      case 'vulnerability':
-        navigate(`/vulnerability-management?id=${id}`);
-        break;
-      case 'scans': navigate('/scan-management');
-        break;
-      case 'scan':
-        navigate(`/scan-management?id=${id}`);
-        break;
-      case 'assets': navigate('/asset-management');
-        break;
-      case 'host':
-        navigate(`/asset-management?id=${id}`);
-        break;
-      case 'trends': navigate('/reports?type=trends');
-        break;
-      default:
-        console.log('View details:', type, id);
+      case 'vulnerabilities': navigate('/vulnerability-management'); break;
+      case 'vulnerability': navigate(`/vulnerability-management?id=${id}`); break;
+      case 'scans': navigate('/scan-management'); break;
+      case 'scan': navigate(`/scan-management?id=${id}`); break;
+      case 'assets': navigate('/asset-management'); break;
+      case 'host': navigate(`/asset-management?id=${id}`); break;
+      case 'trends': navigate('/reports?type=trends'); break;
+      default: console.log('View details:', type, id);
     }
   };
 
-  const handleNewScan = () => {
-    navigate('/scan-wizard');
-  };
-
-  const handleGenerateReport = () => {
-    navigate('/reports/generate');
-  };
-
-  const handleViewReports = () => {
-    navigate('/reports');
-  };
-
-  // Show loading state
-  if (loading && !workspaces?.length) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-muted-foreground">Loading dashboard...</p>
-        </div>
-      </div>
-    );
-  }
+  const handleNewScan = () => navigate('/scan-wizard');
+  const handleGenerateReport = () => navigate('/reports/generate');
+  const handleViewReports = () => navigate('/reports');
 
   // Show error state
   if (error) {
@@ -205,13 +158,13 @@ const MainDashboard = () => {
   return (
     <div className="min-h-screen bg-background">
       <Header onMenuToggle={handleSidebarToggle} isMenuOpen={isSidebarOpen} />
-        <Sidebar
-          isOpen={isSidebarOpen}
-          onClose={handleSidebarClose}
-          workspaces={workspaces}
-          selectedWorkspace={selectedWorkspace}
-          onWorkspaceChange={handleWorkspaceChange}
-        />
+      <Sidebar
+        isOpen={isSidebarOpen}
+        onClose={handleSidebarClose}
+        workspaces={workspaces}
+        selectedWorkspace={selectedWorkspace}
+        onWorkspaceChange={handleWorkspaceChange}
+      />
       <main className="lg:ml-80 pt-16">
         <div className="p-6 space-y-6">
           {/* Page Header */}
@@ -247,28 +200,21 @@ const MainDashboard = () => {
           {/* Main Dashboard Grid */}
           {selectedWorkspace ? (
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-              {/* Top Vulnerabilities */}
               <TopVulnerabilitiesCard
                 vulnerabilities={topVulnerabilities}
                 onViewDetails={handleViewDetails}
                 loading={loading}
               />
-
-              {/* Recent Scan Activity */}
               <RecentScanActivity
                 scans={recentScans}
                 onViewDetails={handleViewDetails}
                 loading={loading}
               />
-
-              {/* Most Vulnerable Hosts */}
               <VulnerableHostsCard
                 hosts={vulnerableHosts}
                 onViewDetails={handleViewDetails}
                 loading={loading}
               />
-
-              {/* Risk Trend Chart */}
               <RiskTrendChart
                 data={riskTrendData}
                 onViewDetails={handleViewDetails}
