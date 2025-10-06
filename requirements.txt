@@ -1,0 +1,8 @@
+Flask
+gunicorn
+celery
+redis
+requests
+networkx
+matplotlib
+python-nmap
