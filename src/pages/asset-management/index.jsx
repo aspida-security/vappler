@@ -1,4 +1,7 @@
 import React, { useState, useEffect } from 'react';
+// --- VULCAN INTEGRATION 1: Import our services ---
+import { assetService } from '../../services/assetService';
+import { scannerApiService } from '../../services/scannerApiService';
 import Header from '../../components/ui/Header';
 import Sidebar from '../../components/ui/Sidebar';
 import AssetTable from './components/AssetTable';
@@ -10,149 +13,137 @@ import Button from '../../components/ui/Button';
 import Icon from '../../components/AppIcon';
 
 const AssetManagement = () => {
+  // --- VULCAN INTEGRATION 2: Add loading/error state and remove mock data ---
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [assets, setAssets] = useState([]);
+  const [stats, setStats] = useState({});
+  // Mock data for tabs and other UI elements that are not yet dynamic
+  const [subnets] = useState([]); 
+  const [assetGroups, setAssetGroups] = useState([]);
+
+  // --- VULCAN INTEGRATION 3: Add state for our new scanner ---
+  const [isScanning, setIsScanning] = useState(false);
+  const [scanTaskId, setScanTaskId] = useState(null);
+  const [scanStatusMessage, setScanStatusMessage] = useState('');
+  const [scanResult, setScanResult] = useState(null);
+
+  // --- Existing UI state ---
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [selectedAssets, setSelectedAssets] = useState([]);
   const [activeTab, setActiveTab] = useState('assets');
   const [discoveryStatus, setDiscoveryStatus] = useState({ isRunning: false, progress: 0 });
 
-  // Mock data for assets
-  const [assets] = useState([
-    {
-      id: 1,
-      hostname: 'web-server-01',
-      ipAddress: '192.168.1.10',
-      operatingSystem: 'Ubuntu 20.04',
-      services: ['HTTP', 'HTTPS', 'SSH'],
-      vulnerabilityCount: 3,
-      highestSeverity: 'High',
-      lastScan: '2024-01-28T10:30:00Z',
-      status: 'online'
-    },
-    {
-      id: 2,
-      hostname: 'db-server-01',
-      ipAddress: '192.168.1.20',
-      operatingSystem: 'Windows Server 2019',
-      services: ['MySQL', 'RDP', 'SMB'],
-      vulnerabilityCount: 7,
-      highestSeverity: 'Critical',
-      lastScan: '2024-01-28T09:15:00Z',
-      status: 'online'
-    },
-    {
-      id: 3,
-      hostname: 'mail-server',
-      ipAddress: '192.168.1.30',
-      operatingSystem: 'CentOS 8',
-      services: ['SMTP', 'IMAP', 'POP3', 'SSH'],
-      vulnerabilityCount: 2,
-      highestSeverity: 'Medium',
-      lastScan: '2024-01-27T16:45:00Z',
-      status: 'online'
-    },
-    {
-      id: 4,
-      hostname: 'backup-server',
-      ipAddress: '192.168.1.40',
-      operatingSystem: 'Ubuntu 18.04',
-      services: ['SSH', 'FTP'],
-      vulnerabilityCount: 12,
-      highestSeverity: 'Critical',
-      lastScan: '2024-01-26T14:20:00Z',
-      status: 'offline'
-    },
-    {
-      id: 5,
-      hostname: 'workstation-01',
-      ipAddress: '192.168.1.100',
-      operatingSystem: 'Windows 10',
-      services: ['RDP', 'SMB'],
-      vulnerabilityCount: 1,
-      highestSeverity: 'Low',
-      lastScan: '2024-01-28T11:00:00Z',
-      status: 'scanning'
-    }
-  ]);
 
-  // Mock statistics
-  const [stats] = useState({
-    totalAssets: 156,
-    assetChange: 8,
-    onlineAssets: 142,
-    onlineChange: 3,
-    criticalVulns: 23,
-    criticalChange: -2,
-    scanCoverage: 87,
-    coverageChange: 5
-  });
+  // --- VULCAN INTEGRATION 4: Fetch live data on component load ---
+  useEffect(() => {
+    // NOTE: This assumes a workspace context is available. For now, we'll hardcode an ID.
+    // In your full app, you'd get this from a context provider (like your useAuth or a new WorkspaceContext).
+    const currentWorkspaceId = 'YOUR_WORKSPACE_ID'; // Replace with a real ID from your Supabase table
 
-  // Mock subnets data
-  const [subnets] = useState([
-    {
-      id: 1,
-      name: 'DMZ Network',
-      range: '192.168.1.0/24',
-      totalAssets: 45,
-      activeAssets: 42,
-      vulnerabilities: 18,
-      coverage: 93,
-      health: 'warning',
-      lastScan: '2024-01-28T10:00:00Z'
-    },
-    {
-      id: 2,
-      name: 'Internal LAN',
-      range: '10.0.0.0/16',
-      totalAssets: 89,
-      activeAssets: 85,
-      vulnerabilities: 34,
-      coverage: 95,
-      health: 'healthy',
-      lastScan: '2024-01-28T08:30:00Z'
-    },
-    {
-      id: 3,
-      name: 'Guest Network',
-      range: '172.16.0.0/24',
-      totalAssets: 22,
-      activeAssets: 15,
-      vulnerabilities: 8,
-      coverage: 68,
-      health: 'critical',
-      lastScan: '2024-01-27T15:45:00Z'
-    }
-  ]);
+    const loadAssetData = async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        // We'll fetch assets and stats. Other data can be added later.
+        const { data: assetsData, error: assetsError } = await assetService.getAssets(currentWorkspaceId);
 
-  // Mock asset groups
-  const [assetGroups, setAssetGroups] = useState([
-    {
-      id: 1,
-      name: 'Web Servers',
-      description: 'Frontend and backend web servers',
-      assetCount: 12,
-      color: 'bg-blue-500',
-      createdAt: '2024-01-15T10:00:00Z',
-      stats: { online: 11, critical: 2, high: 5, lastScan: '2024-01-28T10:00:00Z' }
-    },
-    {
-      id: 2,
-      name: 'Database Servers',
-      description: 'MySQL, PostgreSQL, and MongoDB instances',
-      assetCount: 8,
-      color: 'bg-green-500',
-      createdAt: '2024-01-20T14:30:00Z',
-      stats: { online: 7, critical: 1, high: 3, lastScan: '2024-01-28T09:15:00Z' }
-    },
-    {
-      id: 3,
-      name: 'Workstations',
-      description: 'Employee desktop and laptop computers',
-      assetCount: 45,
-      color: 'bg-purple-500',
-      createdAt: '2024-01-10T09:00:00Z',
-      stats: { online: 38, critical: 0, high: 8, lastScan: '2024-01-27T16:00:00Z' }
+        if (assetsError) throw new Error(assetsError);
+        
+        // Map Supabase data (snake_case) to the format your components expect (camelCase)
+        const formattedAssets = assetsData.map(asset => ({
+          id: asset.id,
+          hostname: asset.hostname,
+          ipAddress: asset.ip_address,
+          operatingSystem: asset.operating_system,
+          services: asset.services || [],
+          vulnerabilityCount: asset.vulnerabilities[0]?.count || 0,
+          highestSeverity: asset.highest_severity,
+          lastScan: asset.last_scan,
+          status: asset.status
+        }));
+        
+        setAssets(formattedAssets);
+        // You would also fetch and set stats, subnets, etc. here
+        setStats({ totalAssets: formattedAssets.length, onlineAssets: formattedAssets.filter(a=>a.status === 'online').length });
+
+      } catch (err) {
+        setError(err.message);
+        console.error("Failed to load asset data:", err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadAssetData();
+  }, []); // Empty array ensures this runs once
+
+  // --- VULCAN INTEGRATION 5: Add polling useEffect for scan results ---
+  useEffect(() => {
+    if (!scanTaskId) return;
+
+    const pollInterval = setInterval(async () => {
+      try {
+        setScanStatusMessage(`Polling for results... (Task ID: ${scanTaskId})`);
+        const data = await scannerApiService.getScanResults(scanTaskId);
+        
+        if (data.state === 'SUCCESS') {
+          setScanResult(data.result);
+          setIsScanning(false);
+          setScanTaskId(null);
+          setScanStatusMessage('Scan complete! Results will be saved and displayed shortly.');
+          clearInterval(pollInterval);
+          // TODO: Here you would call a function to process 'data.result' and save it to Supabase
+          // using your vulnerabilityService.
+        } else if (data.state === 'FAILURE') {
+          setError('Scan failed. Check backend logs.');
+          setIsScanning(false);
+          setScanTaskId(null);
+          clearInterval(pollInterval);
+        }
+      } catch (err) {
+        setError(err.message);
+        setIsScanning(false);
+        setScanTaskId(null);
+        clearInterval(pollInterval);
+      }
+    }, 5000); // Poll every 5 seconds
+
+    return () => clearInterval(pollInterval);
+  }, [scanTaskId]);
+
+  // --- VULCAN INTEGRATION 6: Update handleBulkAction to trigger scans ---
+  const handleBulkAction = async (action, assetIds = selectedAssets) => {
+    if (action === 'scan') {
+      if (assetIds.length === 0) {
+        alert("Please select at least one asset to scan.");
+        return;
+      }
+      
+      setIsScanning(true);
+      setScanResult(null);
+      setError(null);
+      setScanStatusMessage(`Initiating scan for ${assetIds.length} asset(s)...`);
+
+      // For simplicity, we'll scan the first selected asset.
+      const assetToScan = assets.find(a => a.id === assetIds[0]);
+      if (!assetToScan || !assetToScan.ipAddress) {
+        setError("Selected asset has no IP address to scan.");
+        setIsScanning(false);
+        return;
+      }
+
+      try {
+        const data = await scannerApiService.startScan(assetToScan.ipAddress);
+        setScanTaskId(data.task_id); // This triggers the polling useEffect
+      } catch (err) {
+        setError(err.message);
+        setIsScanning(false);
+      }
+    } else {
+      console.log(`Performing ${action} on assets:`, assetIds);
     }
-  ]);
+  };
 
   const tabs = [
     { id: 'assets', label: 'Assets', icon: 'Server', count: assets?.length },
@@ -161,117 +152,27 @@ const AssetManagement = () => {
     { id: 'groups', label: 'Groups', icon: 'Layers', count: assetGroups?.length }
   ];
 
-  const handleSidebarToggle = () => {
-    setIsSidebarOpen(!isSidebarOpen);
-  };
-
-  const handleAssetSelect = (assetIds) => {
-    setSelectedAssets(assetIds);
-  };
-
-  const handleBulkAction = (action, assetIds = selectedAssets) => {
-    console.log(`Performing ${action} on assets:`, assetIds);
-    
-    switch (action) {
-      case 'scan':
-        // Start scan for selected assets
-        break;
-      case 'export':
-        // Export asset data
-        break;
-      case 'tag':
-        // Add tags to assets
-        break;
-      case 'details':
-        // Show asset details
-        break;
-      default:
-        break;
-    }
-  };
-
-  const handleDiscoveryStart = (config) => {
-    console.log('Starting discovery with config:', config);
-    setDiscoveryStatus({ isRunning: true, progress: 0 });
-    
-    // Simulate discovery progress
-    const interval = setInterval(() => {
-      setDiscoveryStatus(prev => {
-        const newProgress = prev?.progress + 10;
-        if (newProgress >= 100) {
-          clearInterval(interval);
-          return { isRunning: false, progress: 100 };
-        }
-        return { ...prev, progress: newProgress };
-      });
-    }, 1000);
-  };
-
-  const handleSubnetSelect = (subnet) => {
-    console.log('Selected subnet:', subnet);
-  };
-
-  const handleGroupCreate = (group) => {
-    setAssetGroups(prev => [...prev, group]);
-  };
-
-  const handleGroupUpdate = (groupId, updates) => {
-    setAssetGroups(prev => 
-      prev?.map(group => 
-        group?.id === groupId ? { ...group, ...updates } : group
-      )
-    );
-  };
-
-  const handleGroupDelete = (groupId) => {
-    setAssetGroups(prev => prev?.filter(group => group?.id !== groupId));
-  };
-
-  // Clear discovery status after completion
-  useEffect(() => {
-    if (discoveryStatus?.progress === 100) {
-      const timeout = setTimeout(() => {
-        setDiscoveryStatus({ isRunning: false, progress: 0 });
-      }, 2000);
-      return () => clearTimeout(timeout);
-    }
-  }, [discoveryStatus?.progress]);
+  if (isLoading) { return <div className="flex items-center justify-center min-h-screen">Loading asset data...</div>; }
+  if (error && !isScanning) { return <div className="flex items-center justify-center min-h-screen text-red-500">Error: {error.message || 'An unexpected error occurred.'}</div>; }
 
   return (
     <div className="min-h-screen bg-background">
-      <Header onMenuToggle={handleSidebarToggle} isMenuOpen={isSidebarOpen} />
-      <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
-      <main className="lg:ml-80 pt-16">
-        <div className="p-6">
-          {/* Page Header */}
-          <div className="mb-8">
+       <Header onMenuToggle={() => setIsSidebarOpen(!isSidebarOpen)} isMenuOpen={isSidebarOpen} />
+       <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
+       <main className="lg:ml-80 pt-16">
+         <div className="p-6">
+           {/* Page Header */}
+           <div className="mb-8">
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h1 className="text-3xl font-bold text-foreground">Asset Management</h1>
-                <p className="text-muted-foreground">
-                  Organize and track network assets for comprehensive vulnerability scanning
-                </p>
+                <p className="text-muted-foreground">Organize and track network assets for comprehensive vulnerability scanning</p>
               </div>
-              
               <div className="flex items-center space-x-3">
-                <Button
-                  variant="outline"
-                  iconName="RefreshCw"
-                  iconPosition="left"
-                >
-                  Refresh
-                </Button>
-                
-                <Button
-                  variant="default"
-                  iconName="Plus"
-                  iconPosition="left"
-                >
-                  Add Assets
-                </Button>
+                <Button variant="outline" iconName="RefreshCw" iconPosition="left">Refresh</Button>
+                <Button variant="default" iconName="Plus" iconPosition="left">Add Assets</Button>
               </div>
             </div>
-
             {/* Statistics */}
             <AssetStats stats={stats} />
           </div>
@@ -281,23 +182,11 @@ const AssetManagement = () => {
             <div className="border-b border-border">
               <nav className="flex space-x-8">
                 {tabs?.map((tab) => (
-                  <button
-                    key={tab?.id}
-                    onClick={() => setActiveTab(tab?.id)}
-                    className={`
-                      flex items-center space-x-2 py-4 px-1 border-b-2 font-medium text-sm transition-colors
-                      ${activeTab === tab?.id
-                        ? 'border-primary text-primary' :'border-transparent text-muted-foreground hover:text-foreground hover:border-muted'
-                      }
-                    `}
-                  >
+                  <button key={tab?.id} onClick={() => setActiveTab(tab?.id)} 
+                    className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-medium text-sm transition-colors ${activeTab === tab?.id ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground hover:border-muted'}`}>
                     <Icon name={tab?.icon} size={16} />
                     <span>{tab?.label}</span>
-                    {tab?.count && (
-                      <span className="bg-muted text-muted-foreground text-xs px-2 py-1 rounded-full">
-                        {tab?.count}
-                      </span>
-                    )}
+                    {tab?.count != null && (<span className="bg-muted text-muted-foreground text-xs px-2 py-1 rounded-full">{tab.count}</span>)}
                   </button>
                 ))}
               </nav>
@@ -305,80 +194,30 @@ const AssetManagement = () => {
           </div>
 
           {/* Tab Content */}
-          <div className="space-y-6">
+          <div>
+            {/* --- VULCAN INTEGRATION 7: Add a display for scan status --- */}
+            {isScanning && (
+              <div className="p-4 mb-6 border border-blue-500 bg-blue-50 rounded-lg">
+                <h3 className="font-bold text-blue-800">Scan in Progress</h3>
+                <p className="text-sm text-blue-700">{scanStatusMessage}</p>
+              </div>
+            )}
+            {scanResult && (
+              <div className="p-4 mb-6 border border-green-500 bg-green-50 rounded-lg">
+                <h3 className="font-bold text-green-800">Scan Report Received</h3>
+                <pre className="text-sm text-green-900 whitespace-pre-wrap">{JSON.stringify(scanResult, null, 2)}</pre>
+              </div>
+            )}
+
             {activeTab === 'assets' && (
               <AssetTable
                 assets={assets}
-                onAssetSelect={handleAssetSelect}
+                onAssetSelect={setSelectedAssets}
                 selectedAssets={selectedAssets}
                 onBulkAction={handleBulkAction}
               />
             )}
-
-            {activeTab === 'discovery' && (
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-                <AssetDiscovery
-                  onDiscoveryStart={handleDiscoveryStart}
-                  discoveryStatus={discoveryStatus}
-                />
-                
-                <div className="bg-card rounded-lg border border-border p-6">
-                  <div className="flex items-center space-x-3 mb-4">
-                    <div className="p-2 bg-primary/10 rounded-lg">
-                      <Icon name="Activity" size={20} className="text-primary" />
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-semibold text-foreground">Discovery Tips</h3>
-                      <p className="text-sm text-muted-foreground">
-                        Best practices for asset discovery
-                      </p>
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-4 text-sm text-muted-foreground">
-                    <div className="flex items-start space-x-3">
-                      <Icon name="CheckCircle" size={16} className="text-green-500 mt-0.5" />
-                      <div>
-                        <div className="font-medium text-foreground">Use CIDR notation</div>
-                        <div>Format subnets as 192.168.1.0/24 for efficient scanning</div>
-                      </div>
-                    </div>
-                    
-                    <div className="flex items-start space-x-3">
-                      <Icon name="CheckCircle" size={16} className="text-green-500 mt-0.5" />
-                      <div>
-                        <div className="font-medium text-foreground">Schedule regular scans</div>
-                        <div>Set up automated discovery to catch new assets</div>
-                      </div>
-                    </div>
-                    
-                    <div className="flex items-start space-x-3">
-                      <Icon name="CheckCircle" size={16} className="text-green-500 mt-0.5" />
-                      <div>
-                        <div className="font-medium text-foreground">Use common ports first</div>
-                        <div>Start with top 1000 ports for faster initial discovery</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {activeTab === 'subnets' && (
-              <SubnetMap
-                subnets={subnets}
-                onSubnetSelect={handleSubnetSelect}
-              />
-            )}
-
-            {activeTab === 'groups' && (
-              <AssetGroups
-                groups={assetGroups}
-                onGroupCreate={handleGroupCreate}
-                onGroupUpdate={handleGroupUpdate}
-                onGroupDelete={handleGroupDelete}
-              />
-            )}
+            {/* ... other tab components will go here ... */}
           </div>
         </div>
       </main>
