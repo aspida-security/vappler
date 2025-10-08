@@ -51,7 +51,6 @@ const Register = () => {
       }
     } catch (err) {
       setError('An unexpected error occurred during registration. Please try again.');
-      console.log('Registration error:', err?.message);
     } finally {
       setLoading(false);
     }

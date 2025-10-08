@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
-import Sidebar from '../components/Sidebar'; 
+import Sidebar from '../components/ui/Sidebar';
 import Header from '../components/Header'; 
 import { workspaceService } from '../services/workspaceService';
 import { useAuth } from '../contexts/AuthContext';
@@ -48,7 +48,6 @@ const AppLayout = () => {
 
   const handleWorkspaceChange = (workspaceId) => {
     setSelectedWorkspace(workspaceId);
-    console.log("Switched to workspace:", workspaceId);
   };
 
   return (

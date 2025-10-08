@@ -34,17 +34,22 @@ const MainDashboard = () => {
   ];
 
   // Refactored data loading logic into a single, stable useEffect hook
-  useEffect(() => {
+useEffect(() => {
     const loadData = async () => {
-      if (!isAuthenticated) return;
+      if (!isAuthenticated) {
+        return;
+      }
 
       setLoading(true);
       setError(null);
 
       try {
-        // Step 1: Fetch the list of workspaces first
         const { data: workspaceData, error: workspaceError } = await workspaceService.getWorkspaces();
-        if (workspaceError) throw new Error(workspaceError);
+
+        if (workspaceError) {
+          console.error('[MainDashboard] useEffect: Workspace error received from service.');
+          throw new Error(workspaceError);
+        }
 
         setWorkspaces(workspaceData || []);
 
@@ -86,7 +91,7 @@ const MainDashboard = () => {
     };
 
     loadData();
-  }, [isAuthenticated, selectedWorkspace]); // This effect now has stable dependencies
+  }, [isAuthenticated, selectedWorkspace]); // This dependency array stays the same
 
   // --- Handlers remain the same ---
   const handleWorkspaceChange = (workspaceId) => {
@@ -115,9 +120,54 @@ const MainDashboard = () => {
   }
 
   // --- JSX remains largely the same ---
-  return (
+    return (
     <div className="min-h-screen bg-background">
-      {/* ... your existing JSX ... */}
+      <Sidebar 
+        isOpen={isSidebarOpen} 
+        onClose={() => setIsSidebarOpen(false)}
+        workspaces={workspaces}
+        selectedWorkspace={selectedWorkspace?.id}
+        onWorkspaceChange={handleWorkspaceChange}
+      />
+      <div className="lg:pl-80">
+        <Header onMenuToggle={() => setIsSidebarOpen(!isSidebarOpen)} isMenuOpen={isSidebarOpen} />
+        <main className="p-6">
+          <div className="grid grid-cols-1 gap-6">
+            <WorkspaceSelector
+              workspaces={workspaces}
+              selectedWorkspace={selectedWorkspace?.id}
+              onWorkspaceChange={handleWorkspaceChange}
+              stats={workspaceStats}
+            />
+            <QuickActions
+              onNewScan={handleNewScan}
+              onGenerateReport={() => console.log('Generate Report clicked')}
+              onViewReports={() => console.log('View Reports clicked')}
+            />
+            <RiskTrendChart 
+              data={riskTrendData} 
+              onViewDetails={() => console.log('View Details clicked')} 
+            />
+
+            {/* --- ADD THE FINAL THREE COMPONENTS --- */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <TopVulnerabilitiesCard 
+                    vulnerabilities={topVulnerabilities}
+                    onViewDetails={() => console.log('View Details clicked')}
+                />
+                <VulnerableHostsCard 
+                    hosts={vulnerableHosts}
+                    onViewDetails={() => console.log('View Details clicked')}
+                />
+            </div>
+            <RecentScanActivity 
+                scans={recentScans}
+                onViewDetails={() => console.log('View Details clicked')}
+            />
+
+          </div>
+        </main>
+      </div>
     </div>
   );
 };

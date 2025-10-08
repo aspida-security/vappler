@@ -66,7 +66,6 @@ const Sidebar = ({
   ];
 
   const handleQuickAction = (action) => {
-    console.log('Quick action:', action);
     // Handle quick actions like opening modals
   };
 

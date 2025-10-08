@@ -141,7 +141,6 @@ const AssetManagement = () => {
         setIsScanning(false);
       }
     } else {
-      console.log(`Performing ${action} on assets:`, assetIds);
     }
   };
 

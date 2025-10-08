@@ -28,7 +28,6 @@ export const AuthProvider = ({ children }) => {
           setUserProfile(data);
         }
       } catch (error) {
-        console.log('Profile loading error:', error?.message);
       } finally {
         setProfileLoading(false);
       }

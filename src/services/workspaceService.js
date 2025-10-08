@@ -1,3 +1,5 @@
+// src/services/workspaceService.js
+
 import { supabase } from '../lib/supabase';
 
 export const workspaceService = {
@@ -20,16 +22,20 @@ export const workspaceService = {
         ?.eq('is_active', true)
         ?.order('created_at', { ascending: false });
       
+
       if (error) {
+        console.error('[workspaceService] Supabase Error:', error); // 3. Explicit error log
         throw error;
       }
       
       return { data, error: null };
     } catch (error) {
-      return { data: null, error: error?.message };
+      console.error('[workspaceService] CATCH Block Error:', error.message); // 5. Catch block
+      return { data: null, error: error.message };
     }
   },
 
+  // ... rest of the service file
   // Get single workspace with detailed info
   async getWorkspace(id) {
     try {

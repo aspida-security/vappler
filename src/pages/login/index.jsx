@@ -32,11 +32,9 @@ const Login = () => {
 
       if (data?.user) {
         // Successful login - redirect will happen via useEffect
-        console.log('Login successful for user:', data?.user?.email);
       }
     } catch (err) {
       setError('An unexpected error occurred. Please try again.');
-      console.log('Login error:', err?.message);
     }
   };
 

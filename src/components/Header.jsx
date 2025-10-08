@@ -1,6 +1,6 @@
 import React from 'react';
-import Button from './Button';
-import Icon from '../AppIcon';
+import Button from './ui/Button';
+import Icon from './AppIcon';
 
 const Header = ({ onMenuClick }) => {
   return (
