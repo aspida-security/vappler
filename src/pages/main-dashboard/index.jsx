@@ -100,7 +100,7 @@ const MainDashboard = () => {
   // ... other handlers
 
   if (error) {
-    // This is the error screen you are seeing
+    // This is the error screen shown if data loading fails
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">

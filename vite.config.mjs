@@ -4,12 +4,13 @@ import tsconfigPaths from 'vite-tsconfig-paths';
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  build: {
-    outDir: "build",
-  },
   plugins: [react(), tsconfigPaths()],
   server: {
+    host: true, 
     port: 4028,
-    host: true,
-  }
+  },
+  build: {
+    outDir: "build",
+    sourcemap: true, // This line helps with browser debugging
+  },
 });
