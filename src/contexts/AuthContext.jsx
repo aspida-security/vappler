@@ -21,13 +21,16 @@ export const AuthProvider = ({ children }) => {
   const profileOperations = {
     async load(userId) {
       if (!userId) return;
+      console.log('[AuthContext] Loading profile for user ID:', userId);
       setProfileLoading(true);
       try {
         const { data, error } = await supabase?.from('user_profiles')?.select('*')?.eq('id', userId)?.single();
+        console.log('[AuthContext] Profile data from Supabase:', { data, error });
         if (!error && data) {
           setUserProfile(data);
         }
       } catch (error) {
+        console.error('[AuthContext] Profile loading CATCH block error:', error?.message);
       } finally {
         setProfileLoading(false);
       }
