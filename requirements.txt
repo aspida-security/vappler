@@ -6,3 +6,4 @@ requests
 networkx
 matplotlib
 python-nmap
+Flask-Cors

@@ -1,14 +1,16 @@
 from flask import Flask, request, jsonify
 from tasks import run_local_nmap_task, run_hackertarget_task
+from flask_cors import CORS # Import the CORS library
 
 app = Flask(__name__)
+CORS(app) # Enable CORS for all routes on your app
 
 @app.route('/scan', methods=['POST'])
 def start_scan():
+    # ... (the rest of this function remains the same)
     data = request.get_json()
     target = data.get('target')
     crown_jewel_asset = data.get('crown_jewel')
-    # This is the key: it defaults to 'local' if no scan_type is provided.
     scan_type = data.get('scan_type', 'local')
 
     if not target or not crown_jewel_asset:
@@ -23,9 +25,9 @@ def start_scan():
 
     return jsonify({"task_id": task.id}), 202
 
-# The /results/<task_id> endpoint remains exactly the same
 @app.route('/results/<task_id>', methods=['GET'])
 def get_results(task_id):
+    # ... (this function remains the same)
     task = run_local_nmap_task.AsyncResult(task_id)
     if task.state == 'PENDING':
         response = {'state': task.state, 'status': 'Pending...'}

@@ -4,10 +4,6 @@ import json
 import matplotlib.pyplot as plt
 
 class NetworkMapper:
-    """
-    A class to scan a network, find vulnerabilities, and visualize the attack path.
-    """
-    # THIS IS THE MISSING METHOD
     def __init__(self, target_range):
         self.target_range = target_range
         self.scanner = nmap.PortScanner()
@@ -15,13 +11,7 @@ class NetworkMapper:
         self.hosts_list = []
 
     def discover_hosts(self):
-        """
-        Discovers active hosts using a more robust scan that skips ping checks.
-        """
         print(f"[*] Discovering hosts in {self.target_range}...")
-        # -Pn: Skips the ping check and assumes the host is online.
-        # -F: Scans the 100 most common ports.
-        # This is far more reliable inside restrictive networks like Docker.
         self.scanner.scan(hosts=self.target_range, arguments='-Pn -F')
         
         self.hosts_list = [host for host in self.scanner.all_hosts()]
@@ -41,12 +31,10 @@ class NetworkMapper:
         for host in self.hosts_list:
             print(f"    -> Scanning {host}...")
             try:
-                # FINAL SCAN COMMAND: -sV is for version detection, which is fast and reliable.
                 self.scanner.scan(host, arguments='-sV -Pn')
                 
                 for port in self.scanner[host].get('tcp', {}):
                     port_info = self.scanner[host]['tcp'][port]
-                    # We will treat the discovered software version as the "vulnerability" detail
                     if port_info.get('product') or port_info.get('version'):
                         version_info = f"{port_info.get('product', '')} {port_info.get('version', '')}".strip()
                         self.graph.nodes[host]['vulnerabilities'].append({
@@ -70,18 +58,20 @@ class NetworkMapper:
             print(f"    -> Host {node} | Vulnerabilities: {num_vulns} | Risk Weight: {weight}")
 
     def find_attack_path_for_api(self, crown_jewel):
-        """
-        Finds the attack path and returns it as a dictionary for API use.
-        """
-        if crown_jewel not in self.graph.nodes():
-            return {"error": f"Crown jewel asset '{crown_jewel}' not found."}
+        target_node = None
+        if crown_jewel in self.graph.nodes():
+            target_node = crown_jewel
+        elif self.hosts_list:
+            target_node = self.hosts_list[0]
+
+        if not target_node or target_node not in self.graph.nodes():
+            return {"error": f"Crown jewel asset '{crown_jewel}' not found in the discovered hosts."}
         
         self.calculate_risk_weights()
         
         try:
-            path = nx.shortest_path(self.graph, source='attacker', target=crown_jewel, weight='weight')
+            path = nx.shortest_path(self.graph, source='attacker', target=target_node, weight='weight')
             
-            # Build a structured report
             report = {
                 "message": "The most likely attack path is: " + " -> ".join(path),
                 "path": path,
@@ -99,26 +89,4 @@ class NetworkMapper:
             return report
 
         except nx.NetworkXNoPath:
-            return {"error": f"Could not find a path from the attacker to '{crown_jewel}'."}
-
-# --- Main execution block ---
-if __name__ == '__main__':
-    target = '45.33.32.156'
-    crown_jewel_asset = '45.33.32.156'
-
-    mapper = NetworkMapper(target)
-    mapper.discover_hosts()
-    mapper.find_vulnerabilities()
-
-    # --- ADD THIS TEST CODE ---
-    print("\n[*] Injecting a hypothetical vulnerability for testing purposes...")
-    mapper.graph.nodes['45.33.32.156']['vulnerabilities'].append({
-        'port': 80,
-        'service': 'http',
-        'details': 'Hypothetical Critical RCE Vulnerability (CVE-2025-XXXX)'
-    })
-    # --- END OF TEST CODE ---
-
-    attack_path = mapper.find_attack_path(crown_jewel=crown_jewel_asset)
-    if attack_path:
-        mapper.draw_attack_graph(attack_path)
+            return {"error": f"Could not find a path from the attacker to '{target_node}'."}
