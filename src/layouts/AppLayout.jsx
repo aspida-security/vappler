@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-// --- VULCAN CHANGE: Add useOutletContext ---
 import { Outlet, useOutletContext, useNavigate } from 'react-router-dom'; 
 import Sidebar from '../components/ui/Sidebar';
-import Header from '../components/ui/Header';
+import Header from '../components/ui/Header'; 
 import { workspaceService } from '../services/workspaceService';
 import { useAuth } from '../contexts/AuthContext';
 import NewScanModal from '../components/modals/NewScanModal';
+import { scannerApiService } from '../services/scannerApiService';
 
 const AppLayout = () => {
     const [isSidebarOpen, setSidebarOpen] = useState(false);
@@ -14,6 +14,10 @@ const AppLayout = () => {
     const [selectedWorkspace, setSelectedWorkspace] = useState('');
     const { user } = useAuth();
     const navigate = useNavigate();
+
+    const [isScanning, setIsScanning] = useState(false);
+    const [scanTaskId, setScanTaskId] = useState(null);
+    const [scanError, setScanError] = useState(null);
 
     useEffect(() => {
         if (!user) {
@@ -46,9 +50,18 @@ const AppLayout = () => {
     const openNewScanModal = () => setIsNewScanModalOpen(true);
     const closeNewScanModal = () => setIsNewScanModalOpen(false);
 
-    const handleScanSubmit = (scanData) => {
+    const handleScanSubmit = async (scanData) => {
         console.log("Scan data received in AppLayout:", scanData);
-        // This is where we will call the scannerApiService
+        setScanError(null);
+        setIsScanning(true);
+        try {
+            const response = await scannerApiService.startScan(scanData.target);
+            console.log("Backend response:", response);
+            setScanTaskId(response.task_id);
+        } catch (error) {
+            console.error("Failed to start scan:", error);
+            setScanError(error.message);
+        }
     };
 
     return (
@@ -59,15 +72,24 @@ const AppLayout = () => {
                 workspaces={workspaces}
                 selectedWorkspace={selectedWorkspace}
                 onWorkspaceChange={handleWorkspaceChange}
-                // --- VULCAN CHANGE: Pass handler to Sidebar ---
                 onNewScanClick={openNewScanModal} 
             />
-            <div className="flex-1 flex flex-col overflow-hidden">
+            <div className="flex-1 flex flex-col overflow-hidden min-w-0">
                 <Header 
                     onMenuClick={() => setSidebarOpen(true)} 
                     onNewScanClick={openNewScanModal} 
                 />
-                <main className="flex-1 overflow-x-hidden overflow-y-auto bg-background p-6">
+                <main className="flex-1 overflow-y-auto bg-background p-6 pt-16">
+                    {isScanning && !scanError && (
+                        <div className="bg-blue-500/10 text-blue-300 p-4 rounded-lg mb-6">
+                           <p>Scan initiated... Task ID: {scanTaskId || 'Waiting...'}</p>
+                        </div>
+                    )}
+                    {scanError && (
+                        <div className="bg-red-500/10 text-red-300 p-4 rounded-lg mb-6">
+                           <p>Error starting scan: {scanError}</p>
+                        </div>
+                    )}
                     <Outlet context={{ openNewScanModal }} /> 
                 </main>
             
@@ -79,9 +101,9 @@ const AppLayout = () => {
             </div>
         </div>
     );
+// --- VULCAN FIX: Added the missing closing brace for the AppLayout component ---
 };
 
-// --- VULCAN CHANGE: Correctly implement the custom hook ---
 export function useAppLayout() {
     return useOutletContext();
 }

@@ -1,14 +1,14 @@
 import React from 'react';
-
 import Icon from '../../../components/AppIcon';
 
+// The 'onNewScan' prop will be passed down from the MainDashboard
 const QuickActions = ({ onNewScan, onGenerateReport, onViewReports }) => {
   const quickActionItems = [
     {
       title: "Start New Scan",
       description: "Launch vulnerability assessment",
       icon: "Play",
-      variant: "default",
+      // --- VULCAN CHANGE: Use the onNewScan function ---
       action: onNewScan,
       primary: true
     },
@@ -16,7 +16,6 @@ const QuickActions = ({ onNewScan, onGenerateReport, onViewReports }) => {
       title: "Generate Report",
       description: "Create security assessment report",
       icon: "FileText",
-      variant: "outline",
       action: onGenerateReport,
       primary: false
     },
@@ -24,7 +23,6 @@ const QuickActions = ({ onNewScan, onGenerateReport, onViewReports }) => {
       title: "View Reports",
       description: "Access existing reports",
       icon: "FolderOpen",
-      variant: "ghost",
       action: onViewReports,
       primary: false
     }
@@ -82,7 +80,6 @@ const QuickActions = ({ onNewScan, onGenerateReport, onViewReports }) => {
           </div>
         ))}
       </div>
-      {/* Additional Quick Stats */}
       <div className="mt-6 pt-6 border-t border-border">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
           <div>
