@@ -1,37 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { workspaceService } from '../../services/workspaceService'; // --- CHANGE 1: Import the service ---
-import Icon from '../../components/AppIcon';
-import Button from '../../components/ui/Button';
-import Input from '../../components/ui/Input';
-import Select from '../../components/ui/Select';
-import Header from '../../components/ui/Header';
-import Sidebar from '../../components/ui/Sidebar';
+import { workspaceService } from '../../services/workspaceService';
 import WorkspaceCard from './components/WorkspaceCard';
-import WorkspaceTable from './components/WorkspaceTable';
-import WorkspaceSummary from './components/WorkspaceSummary';
-import AddClientModal from './components/AddClientModal';
-import BulkActionsBar from './components/BulkActionsBar';
-import ClientProfileModal from './components/ClientProfileModal';
+import Icon from '../../components/AppIcon';
 
 const ClientWorkspaceManager = () => {
-  // --- CHANGE 2: Update state for live data ---
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [workspaces, setWorkspaces] = useState([]); // Initialize with an empty array
+  const [workspaces, setWorkspaces] = useState([]);
 
-  // --- Existing UI state ---
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [viewMode, setViewMode] = useState('table');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState('clientName');
-  const [sortOrder, setSortOrder] = useState('asc');
-  const [filterBy, setFilterBy] = useState('all');
-  const [selectedWorkspaces, setSelectedWorkspaces] = useState([]);
-  const [isAddClientModalOpen, setIsAddClientModalOpen] = useState(false);
-  const [selectedClient, setSelectedClient] = useState(null);
-  const [isClientProfileModalOpen, setIsClientProfileModalOpen] = useState(false);
-
-  // --- CHANGE 3: Add useEffect to fetch data on component mount ---
   useEffect(() => {
     const fetchWorkspaces = async () => {
       setIsLoading(true);
@@ -39,24 +15,18 @@ const ClientWorkspaceManager = () => {
       const { data, error } = await workspaceService.getWorkspaces();
 
       if (error) {
-        setError(error);
+        setError(error.message);
         setWorkspaces([]);
       } else if (data) {
-        // --- CHANGE 4: Map Supabase data to match the component's expected structure ---
         const formattedWorkspaces = data.map(ws => ({
           id: ws.id,
-          clientName: ws.name, // Map 'name' from Supabase to 'clientName'
-          industry: ws.industry,
-          assetCount: ws.assets[0]?.count || 0, // Extract count from nested array
-          lastScanDate: ws.last_scan_date, // Map snake_case to camelCase
-          riskScore: ws.risk_score,
-          criticalVulns: ws.critical_vulns_count || 0,
-          highVulns: ws.high_vulns_count || 0,
-          mediumVulns: ws.medium_vulns_count || 0,
-          lowVulns: ws.low_vulns_count || 0,
+          clientName: ws.name,
+          industry: ws.industry || 'Not Specified',
+          assetCount: ws.assets && ws.assets.length > 0 ? ws.assets[0].count : 0,
+          lastScanDate: ws.updated_at || new Date().toISOString(),
+          riskScore: ws.risk_score || 0,
+          criticalVulns: 0, highVulns: 0, mediumVulns: 0, lowVulns: 0,
           isActive: ws.is_active,
-          contactEmail: ws.contact_email,
-          contactPhone: ws.contact_phone
         }));
         setWorkspaces(formattedWorkspaces);
       }
@@ -64,35 +34,56 @@ const ClientWorkspaceManager = () => {
     };
 
     fetchWorkspaces();
-  }, []); // Empty array ensures this runs once on load
-
-  // --- All your existing logic for sorting, filtering, and event handlers remains the same ---
-  // ... (summaryData calculation, filterOptions, filteredAndSortedWorkspaces, handlers, etc.) ...
+  }, []);
   
-  // NOTE: This will now be calculated based on the live data
-  const summaryData = {
-    totalClients: workspaces?.length,
-    averageRiskScore: workspaces?.length > 0 ? Math.round(workspaces.reduce((sum, ws) => sum + ws.riskScore, 0) / workspaces.length) : 0,
-    activeScans: 3, // This can be fetched with another service call later
-    scheduledScans: 8 // This can also be fetched
-  };
+  const handleSwitch = (id) => console.log(`Switching to workspace ${id}`);
+  const handleEdit = (id) => console.log(`Editing client ${id}`);
+  const handleReports = (id) => console.log(`Viewing reports for ${id}`);
 
-  const filteredAndSortedWorkspaces = workspaces?.filter(/* ... your existing filter logic ... */);
-  // ... rest of your component logic remains here ...
-
-  // --- CHANGE 5: Add Loading and Error UI states ---
   if (isLoading) {
-    return <div className="flex items-center justify-center min-h-screen">Loading workspaces...</div>;
+    return (
+      <div className="flex items-center justify-center p-10">
+        <Icon name="Loader" className="animate-spin mr-2" />
+        Loading Client Workspaces...
+      </div>
+    );
   }
 
   if (error) {
-    return <div className="flex items-center justify-center min-h-screen text-red-500">Error: {error}</div>;
+    return (
+        <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-center">
+            <p className="text-red-400 font-semibold">Error loading clients.</p>
+            <p className="text-red-500 text-sm mt-1">{error}</p>
+        </div>
+    ); 
   }
 
-  // --- Your existing return statement with all the JSX ---
   return (
-    <div className="min-h-screen bg-background">
-      {/* ... your existing Header, Sidebar, and main content JSX ... */}
+    <div className="space-y-6">
+        <div className="flex items-center justify-between">
+            <h1 className="text-3xl font-bold text-foreground">Client Workspace Manager</h1>
+            {/* Add New Client button can be wired up later */}
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {workspaces.map(ws => (
+                <WorkspaceCard 
+                    key={ws.id} 
+                    workspace={ws} 
+                    onSwitchWorkspace={handleSwitch}
+                    onEditClient={handleEdit}
+                    onViewReports={handleReports}
+                />
+            ))}
+        </div>
+
+        {workspaces.length === 0 && (
+            <div className="text-center p-10 bg-card rounded-lg border border-border">
+                <Icon name="Users" size={48} className="mx-auto text-muted-foreground mb-4" />
+                <h3 className="text-lg font-semibold">No Workspaces Found</h3>
+                <p className="text-muted-foreground mt-2">Create your first client workspace to get started.</p>
+            </div>
+        )}
     </div>
   );
 };

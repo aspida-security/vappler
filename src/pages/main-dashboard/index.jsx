@@ -13,16 +13,14 @@ import WorkspaceSelector from './components/WorkspaceSelector';
 import QuickActions from './components/QuickActions';
 
 const MainDashboard = () => {
-  const { isAuthenticated } = useAuth();
-  const { openNewScanModal } = useAppLayout();
-
+  const { openNewScanModal, selectedWorkspace } = useAppLayout(); // Get selectedWorkspace from context
   const [loading, setLoading] = useState(true);
-  const [selectedWorkspace, setSelectedWorkspace] = useState(null);
-  const [workspaces, setWorkspaces] = useState([]);
-  const [topVulnerabilities, setTopVulnerabilities] = useState([]);
-  const [recentScans, setRecentScans] = useState([]);
-  const [vulnerableHosts, setVulnerableHosts] = useState([]);
-  const [workspaceStats, setWorkspaceStats] = useState({});
+  const [dashboardData, setDashboardData] = useState({
+      stats: {},
+      topVulnerabilities: [],
+      vulnerableHosts: [],
+      recentScans: []
+  });
   const [error, setError] = useState(null);
 
   const riskTrendData = [
@@ -30,37 +28,41 @@ const MainDashboard = () => {
   ];
 
   useEffect(() => {
+    // Guard clause: Don't fetch data until we have a workspace ID
+    if (!selectedWorkspace) {
+        setLoading(false);
+        return;
+    }
+
     const loadData = async () => {
-      if (!isAuthenticated) return;
       setLoading(true);
       setError(null);
       try {
-        const { data: workspaceData, error: workspaceError } = await workspaceService.getWorkspaces();
-        if (workspaceError) throw new Error(workspaceError);
-        setWorkspaces(workspaceData || []);
-        let workspaceToLoad = selectedWorkspace;
-        if (!workspaceToLoad && workspaceData?.length > 0) {
-          workspaceToLoad = workspaceData[0];
-          setSelectedWorkspace(workspaceData[0]);
-        }
-        if (workspaceToLoad) {
-          const workspaceId = workspaceToLoad.id;
-          const [
-            { data: stats },
-            { data: vulnData },
-            { data: hostsData },
-            { data: scansData }
-          ] = await Promise.all([
-            workspaceService.getWorkspaceStats(workspaceId),
-            vulnerabilityService.getTopVulnerabilities(workspaceId, 5),
-            assetService.getVulnerableHosts(workspaceId, 5),
-            scanService.getRecentScans(workspaceId, 5)
-          ]);
-          setWorkspaceStats(stats || {});
-          setTopVulnerabilities(vulnData || []);
-          setVulnerableHosts(hostsData || []);
-          setRecentScans(scansData || []);
-        }
+        const [
+          statsRes,
+          vulnRes,
+          hostsRes,
+          scansRes
+        ] = await Promise.all([
+          workspaceService.getWorkspaceStats(selectedWorkspace),
+          vulnerabilityService.getTopVulnerabilities(selectedWorkspace, 5),
+          assetService.getVulnerableHosts(selectedWorkspace, 5),
+          scanService.getRecentScans(selectedWorkspace, 5)
+        ]);
+        
+        // Check for errors in any of the promises
+        if (statsRes.error) throw new Error(`Stats Error: ${statsRes.error}`);
+        if (vulnRes.error) throw new Error(`Vuln Error: ${vulnRes.error}`);
+        if (hostsRes.error) throw new Error(`Hosts Error: ${hostsRes.error}`);
+        if (scansRes.error) throw new Error(`Scans Error: ${scansRes.error}`);
+
+        setDashboardData({
+            stats: statsRes.data || {},
+            topVulnerabilities: vulnRes.data || [],
+            vulnerableHosts: hostsRes.data || [],
+            recentScans: scansRes.data || []
+        });
+
       } catch (err) {
         console.error('Dashboard loading error:', err.message);
         setError('Failed to load dashboard data. Please try refreshing the page.');
@@ -69,13 +71,21 @@ const MainDashboard = () => {
       }
     };
     loadData();
-  }, [isAuthenticated, selectedWorkspace]);
+  }, [selectedWorkspace]); // Rerun this effect when the workspace changes
 
+  // We need to get the full workspaces list for the selector dropdown
+  // This is a separate concern from the dashboard data itself
+  const [workspaces, setWorkspaces] = useState([]);
+  useEffect(() => {
+      workspaceService.getWorkspaces().then(({ data }) => {
+          if (data) setWorkspaces(data);
+      })
+  }, []);
+  
   const handleWorkspaceChange = (workspaceId) => {
-    const workspace = workspaces.find(ws => ws.id === workspaceId);
-    if (workspace) {
-      setSelectedWorkspace(workspace);
-    }
+    // This is handled by the AppLayout now, but we'll leave it in case of direct calls
+    // In a future refactor, this might come from a dedicated context provider
+    window.location.reload(); // Simple way to force a full refresh on change
   };
 
   if (loading) {
@@ -84,20 +94,29 @@ const MainDashboard = () => {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        {/* ... error UI ... */}
+      <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-center">
+        <p className="text-red-400 font-semibold">{error}</p>
       </div>
     );
   }
 
-  // --- VULCAN CHANGE: Simplified the return statement ---
+  // Handle the case where no workspace is selected yet or none exist
+  if (!selectedWorkspace) {
+      return (
+        <div className="text-center p-10 bg-card rounded-lg border border-border">
+            <h3 className="text-lg font-semibold">No Workspace Selected</h3>
+            <p className="text-muted-foreground mt-2">Please select or create a workspace to see the dashboard.</p>
+        </div>
+      )
+  }
+
   return (
     <div className="grid grid-cols-1 gap-6">
       <WorkspaceSelector
         workspaces={workspaces}
-        selectedWorkspace={selectedWorkspace?.id}
+        selectedWorkspace={selectedWorkspace}
         onWorkspaceChange={handleWorkspaceChange}
-        stats={workspaceStats}
+        stats={dashboardData.stats}
       />
       <QuickActions
         onNewScan={openNewScanModal} 
@@ -110,16 +129,16 @@ const MainDashboard = () => {
       />
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <TopVulnerabilitiesCard 
-              vulnerabilities={topVulnerabilities}
+              vulnerabilities={dashboardData.topVulnerabilities}
               onViewDetails={() => console.log('View Details clicked')}
           />
           <VulnerableHostsCard 
-              hosts={vulnerableHosts}
+              hosts={dashboardData.vulnerableHosts}
               onViewDetails={() => console.log('View Details clicked')}
           />
       </div>
       <RecentScanActivity 
-          scans={recentScans}
+          scans={dashboardData.recentScans}
           onViewDetails={() => console.log('View Details clicked')}
       />
     </div>
