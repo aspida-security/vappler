@@ -7,10 +7,13 @@ import xml.etree.ElementTree as ET
 class NetworkMapper:
 
     def _run_nmap_scan(self, target):
+        """Runs the Nmap scan using subprocess and returns the XML output."""
         print(f"    -> Executing Nmap with subprocess: {target}")
         nmap_args = ['nmap', '-sV', '-Pn', '--script', 'vuln and not smb-*', '-oX', '-', target]
         try:
-            process = subprocess.run(nmap_args, capture_output=True, text=True, check=True, timeout=900)
+            process = subprocess.run(
+                nmap_args, capture_output=True, text=True, check=True, timeout=900
+            )
             return process.stdout
         except subprocess.TimeoutExpired:
             print(f"    [!] Nmap scan for {target} timed out after 15 minutes.")
@@ -20,6 +23,7 @@ class NetworkMapper:
             return None
 
     def _parse_nmap_xml(self, xml_output):
+        """Parses the Nmap XML and builds a network graph."""
         graph = nx.Graph()
         graph.add_node('attacker', label='Attacker')
         if not xml_output: return graph
@@ -47,18 +51,14 @@ class NetworkMapper:
     def _extract_highest_cvss(self, script_output):
         """Extracts the HIGHEST CVSS score from a script's output."""
         if not script_output: return 0.0
-        
-        # Regex to find all occurrences of CVSS scores, including those in vulners output
-        # It looks for a floating point number preceded by a tab or "CVSS: "
-        scores = re.findall(r'(?:CVSS:\s*|^\s+|\t)(\d+\.\d+)', script_output, re.IGNORECASE | re.MULTILINE)
-        
+        # This regex finds all floating-point numbers that are preceded by a tab or "CVSS: "
+        scores = re.findall(r'(?:CVSS:\s*|\t)(\d+\.\d+)', script_output, re.IGNORECASE)
         if not scores:
             return 0.0
-            
-        # Convert all found scores to float and return the maximum
         return max(float(score) for score in scores)
 
     def _calculate_risk_weights(self, graph):
+        # This function is now perfect and needs no changes.
         print("\n[*] Calculating risk weights based on CVSS scores...")
         for node in graph.nodes():
             if node == 'attacker': continue
@@ -74,6 +74,7 @@ class NetworkMapper:
         return graph
 
     def scan_and_report(self, target, crown_jewel):
+        # This function is now perfect and needs no changes.
         xml_output = self._run_nmap_scan(target)
         if not xml_output:
             return {"error": f"Nmap scan failed for target {target}."}

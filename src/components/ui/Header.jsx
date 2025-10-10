@@ -5,7 +5,8 @@ import Button from './Button';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 
-const Header = ({ onMenuToggle, isMenuOpen = false }) => {
+// --- VULCAN CHANGE: Added onNewScanClick to the props ---
+const Header = ({ onMenuToggle, isMenuOpen = false, onNewScanClick }) => {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
@@ -25,8 +26,6 @@ const Header = ({ onMenuToggle, isMenuOpen = false }) => {
           <Button variant="ghost" size="icon" onClick={onMenuToggle} className="lg:hidden">
             <Icon name={isMenuOpen ? 'X' : 'Menu'} size={20} />
           </Button>
-
-          {/* --- VULCAN CHANGE: Hide the logo on large screens --- */}
           <div className="flex lg:hidden items-center space-x-3">
             <div className="flex items-center justify-center w-8 h-8 bg-primary rounded-lg">
               <Icon name="Shield" size={20} color="var(--color-primary-foreground)" />
@@ -56,7 +55,8 @@ const Header = ({ onMenuToggle, isMenuOpen = false }) => {
         </nav>
 
         <div className="flex items-center space-x-3">
-          <Button variant="outline" size="sm" className="hidden md:flex items-center">
+          {/* --- VULCAN CHANGE: Added the onClick handler --- */}
+          <Button onClick={onNewScanClick} variant="outline" size="sm" className="hidden md:flex items-center">
             <Icon name="Plus" size={16} className="mr-2"/>
             <span>New Scan</span>
           </Button>
@@ -64,7 +64,6 @@ const Header = ({ onMenuToggle, isMenuOpen = false }) => {
              <Icon name="FileText" size={16} className="mr-2"/>
             <span>Report</span>
           </Button>
-
           <div className="relative">
             <button onClick={() => setIsUserMenuOpen(!isUserMenuOpen)} className="flex items-center justify-center w-9 h-9 bg-muted rounded-full focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2">
               <Icon name="User" size={18} className="text-muted-foreground" />
