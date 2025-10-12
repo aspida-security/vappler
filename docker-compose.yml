@@ -1,12 +1,12 @@
 version: '3.8'
 
 services:
-  # The Redis "message board" service
   redis:
     image: "redis:alpine"
     container_name: vulcan-redis
+    networks:
+      - vulcan-net
 
-  # Our existing API service
   api:
     build: .
     container_name: vulcan-api
@@ -14,16 +14,31 @@ services:
       - "5000:5000"
     depends_on:
       - redis
-    # Grant Nmap permissions here instead of in the run command
     cap_add:
       - NET_RAW
       - NET_ADMIN
+    tty: true
+    networks:
+      - vulcan-net
 
-  # The new Celery background worker service
   worker:
     build: .
     container_name: vulcan-worker
-    # This runs the celery worker command instead of the gunicorn server
     command: celery -A tasks.celery_app worker --loglevel=info
     depends_on:
       - redis
+    tty: true
+    networks:
+      - vulcan-net
+
+  test-target:
+    image: "httpd:alpine"
+    container_name: vulcan-test-target
+    ports:
+      - "8080:80"
+    networks:
+      - vulcan-net
+
+networks:
+  vulcan-net:
+    driver: bridge
