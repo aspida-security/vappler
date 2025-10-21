@@ -27,58 +27,90 @@ const AppLayout = () => {
         if (!selectedWorkspace) {
             throw new Error("Cannot save results: No workspace is selected.");
         }
-        setScanStatusMessage('Processing and saving scan results...');
+        setScanStatusMessage('Processing and saving scan results...'); //
+
+        // --- START: Code to Replace/Insert ---
+        // --- START: Improved Try/Catch Block ---
+        let newAsset = null; // Declare newAsset outside the try block
         try {
-            if (!result || !result.vulnerability_details || result.vulnerability_details.length === 0) {
-                throw new Error("Invalid scan result format received from backend.");
+            // --- Asset Creation ---
+            console.log("PRE-INSERT CHECK: Asset data to be sent:", JSON.stringify(assetData, null, 2));
+            console.log("Attempting to create asset...");
+            const { data: createdAsset, error: assetCreationError } = await assetService.createAsset(assetData); // Use a specific error variable
+
+            if (assetCreationError) {
+                console.error("Asset creation raw error object:", assetCreationError);
+                console.error("Asset creation failed! Details:", assetCreationError.message);
+                console.error("Data sent that caused error:", JSON.stringify(assetData, null, 2));
+                // Throw specific error for asset creation phase
+                throw new Error(`Asset creation phase failed: ${assetCreationError.message || 'Unknown error'}`);
             }
 
-            const assetDetail = result.vulnerability_details[0];
-            const assetPayload = {
-                workspace_id: selectedWorkspace,
-                hostname: assetDetail.host,
-                ip_address: assetDetail.host,
-                asset_type: 'server',
-                operating_system: 'Unknown',
-                risk_score: 0.0,
-                is_active: true,
-                last_scan_at: new Date().toISOString(),
-                open_ports: assetDetail.vulnerabilities.map(v => v.port)
-            };
-
-            const { data: newAsset, error: assetError } = await assetService.createAsset(assetPayload);
-            if (assetError) {
-                throw new Error(`Asset creation failed: ${assetError.message || 'Unknown error'}`);
+            if (!createdAsset) {
+                console.error("Asset creation returned null/undefined data but no explicit error.");
+                console.error("Data sent:", JSON.stringify(assetData, null, 2));
+                throw new Error("Asset creation phase returned no data.");
             }
 
-            const vulnerabilityPayloads = assetDetail.vulnerabilities.map(vuln => ({
-                workspace_id: selectedWorkspace,
-                asset_id: newAsset.id,
-                scan_id: null,
-                cve_id: 'CVE-2025-XXXX',
-                title: vuln.details,
-                description: `Discovered on port ${vuln.port} with service ${vuln.service}.`,
-                severity: 'Critical',
-                cvss_score: 9.8,
-                status: 'open',
-                port: vuln.port,
-                service: vuln.service,
-                remediation_steps: 'Upgrade the affected software package.',
-            }));
+            newAsset = createdAsset; // Assign to outer scope variable
+            console.log("POST-INSERT: Asset created successfully:", newAsset);
+            setScanStatusMessage(`Asset ${newAsset.hostname || newAsset.ip_address} saved. Processing ${hostDetails?.vulnerabilities?.length || 0} vulnerabilities...`);
 
-            for (const payload of vulnerabilityPayloads) {
-                const { error: vulnError } = await vulnerabilityService.createVulnerability(payload);
-                if (vulnError) {
-                    console.error("Failed to save a vulnerability:", vulnError);
+            // --- Vulnerability Creation Loop ---
+            let vulnerabilityErrors = []; // Array to collect errors from the loop
+            if (hostDetails?.vulnerabilities && hostDetails.vulnerabilities.length > 0) {
+                for (const vuln of hostDetails.vulnerabilities) {
+                    const vulnData = {
+                        workspace_id: selectedWorkspace,
+                        asset_id: newAsset.id,
+                        scan_id: null, // TODO: Link scan record
+                        cve_id: null, // TODO: Extract
+                        title: vuln.details || 'Unknown Vulnerability',
+                        description: vuln.details,
+                        severity: 'Medium', // TODO: Map
+                        cvss_score: null, // TODO: Extract
+                        cvss_vector: null, // TODO: Extract
+                        status: 'open',
+                        port: vuln.port,
+                        service: vuln.service,
+                        proof_of_concept: null,
+                        remediation_steps: 'Check Nmap output for details.', // Placeholder
+                        references: null
+                    };
+
+                    console.log("Attempting to create vulnerability:", vulnData);
+                    // Use a specific error variable for this step
+                    const { error: vulnCreationError } = await vulnerabilityService.createVulnerability(vulnData);
+
+                    if (vulnCreationError) {
+                        const errorMsg = `Failed to save vulnerability "${vulnData.title}" for asset ${newAsset.id}: ${vulnCreationError.message}`;
+                        console.error(errorMsg, vulnCreationError);
+                        vulnerabilityErrors.push(errorMsg); // Collect specific error
+                        // Continue to next vulnerability instead of throwing immediately
+                    } else {
+                        console.log(`Vulnerability "${vulnData.title}" saved successfully.`);
+                    }
                 }
             }
-            
-            setScanStatusMessage('Successfully saved new asset and associated vulnerabilities!');
 
-        } catch (err) {
-            console.error("Error during data ingestion:", err);
-            setScanError(`Data ingestion failed: ${err.message}`);
+            // --- Final Status Update ---
+            if (vulnerabilityErrors.length > 0) {
+                // If there were errors saving some vulnerabilities, report partial success
+                setScanError(`Scan complete, but ${vulnerabilityErrors.length} vulnerabilities failed to save. Check console for details.`);
+                setScanStatusMessage(''); // Clear processing message
+            } else {
+                // If everything succeeded
+                setScanStatusMessage('Scan results processed and saved successfully!');
+                setScanError(null); // Explicitly clear any previous error state
+            }
+
+        } catch (error) { // Catch errors from asset creation OR critical failures
+            console.error("Error during data ingestion:", error);
+            // Use the error caught by the try block (could be asset creation error or something else)
+            setScanError(`Failed to save scan results: ${error.message}`);
+            setScanStatusMessage(''); // Clear processing message on error
         }
+        // --- END: Improved Try/Catch Block ---
     };
 
     useEffect(() => {
