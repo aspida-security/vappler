@@ -1,6 +1,6 @@
 // src/services/scannerApiService.js
 
-const API_URL = 'http://127.0.0.1:5000'; // Our Python backend URL
+const API_URL = 'http://127.0.0.1:5000'; // FIX: Revert to standard localhost now that services are running
 
 export const scannerApiService = {
   /**

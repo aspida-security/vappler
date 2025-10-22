@@ -14,6 +14,13 @@ services:
       - "5000:5000"
     depends_on:
       - redis
+    # --- RESOURCE LIMITS FOR API (LIGHTWEIGHT) ---
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25' # Limit to 1/4 of a CPU core
+    # --- END RESOURCE LIMITS ---
     cap_add:
       - NET_RAW
       - NET_ADMIN
@@ -27,6 +34,13 @@ services:
     command: celery -A tasks.celery_app worker --loglevel=info
     depends_on:
       - redis
+    # --- RESOURCE LIMITS FOR WORKER (HEAVY NMAP/PYTHON) ---
+    deploy:
+      resources:
+        limits:
+          memory: 1024M # 1GB cap for scanning tasks
+          cpus: '1.0'  # Limit to a maximum of one full CPU core
+    # --- END RESOURCE LIMITS ---
     tty: true
     networks:
       - vulcan-net
