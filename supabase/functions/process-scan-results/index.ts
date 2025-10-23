@@ -78,13 +78,14 @@ serve(async (req) => {
       throw new Error(`Authentication failed: ${userError?.message || 'No user'}`)
     }
 
-    // 3. Get Payload and Workspace ID
+    // 3. Get Payload and IDs (CRITICAL UPDATE)
     const scanResult: ScanResult = await req.json()
     const url = new URL(req.url)
     const workspaceId = url.searchParams.get('workspaceId')
+    const scanId = url.searchParams.get('scanId') // CRITICAL: Retrieve the Scan ID
 
-    if (!workspaceId) {
-      throw new Error('Missing workspaceId query parameter')
+    if (!workspaceId || !scanId) { // UPDATED VALIDATION
+      throw new Error('Missing workspaceId or scanId query parameter')
     }
     if (scanResult.error) {
       throw new Error(`Scan failed: ${scanResult.error}`)
@@ -93,6 +94,9 @@ serve(async (req) => {
       !scanResult.vulnerability_details ||
       scanResult.vulnerability_details.length === 0
     ) {
+      // 3b. Update Scan Status to completed if no vulns found (CLEANUP)
+       await supabaseServiceRole.from('scans').update({ status: 'completed' }).eq('id', scanId).execute();
+
       return new Response(
         JSON.stringify({ message: 'Scan complete, no hosts or vulnerabilities found.' }),
         {
@@ -102,7 +106,8 @@ serve(async (req) => {
       )
     }
 
-    // 4. Check User Permissions
+    // 4. Check User Permissions (omitted for brevity, assuming existing logic is here)
+    // ... existing permission check logic ...
     const { data: permission, error: permissionError } =
       await supabaseServiceRole
         .from('workspace_users')
@@ -125,14 +130,18 @@ serve(async (req) => {
         }
       )
     }
+    // --- End Permission Check ---
+
 
     // 5. Process Host (Asset)
-    // Assuming one host per scan result for now, as per python output
     const hostDetails = scanResult.vulnerability_details[0]
     const targetIp = hostDetails.host
 
     // 6. IP Validation
     if (!isValidIp(targetIp)) {
+       // 6b. Update Scan Status to failed if target is invalid (CLEANUP)
+       await supabaseServiceRole.from('scans').update({ status: 'failed', completed_at: new Date().toISOString() }).eq('id', scanId).execute();
+
       return new Response(
         JSON.stringify({
           message:
@@ -150,11 +159,9 @@ serve(async (req) => {
       workspace_id: workspaceId,
       ip_address: targetIp,
       hostname: targetIp, // Default hostname to IP
-      // Ensure asset_type is provided to use the default 'server' or a placeholder.
-      // We will explicitly set the default here for safety, matching the DB default.
-      asset_type: 'server', 
-      operating_system: 'Unknown', // Nmap script can provide this later
-      is_active: true, // Use the correct boolean column name from schema
+      asset_type: 'server', // Explicitly setting default
+      operating_system: 'Unknown',
+      is_active: true, // CRITICAL FIX: Use correct boolean column
       last_scan_at: new Date().toISOString(),
     }
 
@@ -162,15 +169,13 @@ serve(async (req) => {
       .from('assets')
       .upsert(assetData, {
         onConflict: 'workspace_id, ip_address',
-        // CRITICAL: Ensure we use defaultToNull: false to avoid overwriting existing data 
-        // with nulls from the payload.
         defaultToNull: false, 
       })
       .select()
       .single()
 
     if (assetUpsertError) {
-      console.error('Asset Upsert Failed Details:', assetUpsertError) // New logging
+      console.error('Asset Upsert Failed Details:', assetUpsertError)
       throw new Error(`Asset Upsert Failed: ${assetUpsertError.message}`)
     }
 
@@ -180,7 +185,8 @@ serve(async (req) => {
 
     for (const vuln of hostDetails.vulnerabilities) {
       const parsedPort = parsePort(vuln.port)
-      const uniqueKey = `${asset.id}|${vuln.name}|${parsedPort}`
+      // Use asset.id (UUID) not asset.ip_address (string)
+      const uniqueKey = `${asset.id}|${vuln.name}|${parsedPort}` 
 
       if (!seenVulnerabilities.has(uniqueKey)) {
         seenVulnerabilities.add(uniqueKey)
@@ -188,22 +194,22 @@ serve(async (req) => {
         vulnerabilitiesToUpsert.push({
           workspace_id: workspaceId,
           asset_id: asset.id,
-          scan_id: null, // TODO: Link to a scan record
+          scan_id: scanId, // CRITICAL FIX: Use the received UUID from query parameter
           cve_id: vuln.cve,
           title: vuln.name || 'Unknown Vulnerability',
           description: vuln.details,
           severity: vuln.severity || 'Info',
           cvss_score: vuln.cvss_score,
-          cvss_vector: null, // Not provided by scanner yet
+          cvss_vector: null,
           status: 'open',
-          port: parsedPort, // Use the parsed integer or null
+          port: parsedPort,
           service: vuln.service,
           remediation_steps: 'Remediation steps not yet available.',
         })
       }
     }
 
-    // 9. Upsert Vulnerabilities (THE FIX)
+    // 9. Upsert Vulnerabilities
     if (vulnerabilitiesToUpsert.length > 0) {
       console.log(
         `Upserting ${vulnerabilitiesToUpsert.length} unique vulnerabilities for asset ${asset.id}.`
@@ -211,8 +217,6 @@ serve(async (req) => {
       const { error: vulnUpsertError } = await supabaseServiceRole
         .from('vulnerabilities')
         .upsert(vulnerabilitiesToUpsert, {
-          // *** THE FINAL FIX: Use the comma-separated column list ***
-          // This allows PostgREST to correctly infer and use the dual partial unique indexes.
           onConflict: 'asset_id,title,port', 
         })
 
@@ -224,8 +228,12 @@ serve(async (req) => {
       }
       console.log('Vulnerabilities upserted.')
     }
+    
+    // 10. Update Scan Status to Completed
+    await supabaseServiceRole.from('scans').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', scanId).execute();
 
-    // 10. Return Success
+
+    // 11. Return Success
     return new Response(
       JSON.stringify({
         message: `Successfully processed scan for asset ${asset.ip_address}.`,
@@ -238,6 +246,17 @@ serve(async (req) => {
       }
     )
   } catch (err) {
+     // 12. Update Scan Status to Failed on Error (CLEANUP)
+    try {
+        const url = new URL(req.url);
+        const scanId = url.searchParams.get('scanId');
+        if (scanId && supabaseServiceRole) {
+            await supabaseServiceRole.from('scans').update({ status: 'failed', completed_at: new Date().toISOString() }).eq('id', scanId).execute();
+        }
+    } catch (cleanupErr) {
+        console.error("Cleanup scan update failed:", cleanupErr.message);
+    }
+    
     // Error Handling
     console.error('Critical Error in Edge Function:', err)
     return new Response(JSON.stringify({ error: err.message }), {

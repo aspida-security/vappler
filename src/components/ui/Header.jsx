@@ -1,3 +1,5 @@
+// File: src/components/ui/Header.jsx
+
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Icon from '../AppIcon';
@@ -55,12 +57,13 @@ const Header = ({ onMenuToggle, isMenuOpen = false, onNewScanClick }) => {
         </nav>
 
         <div className="flex items-center space-x-3">
-          {/* --- VULCAN CHANGE: Added the onClick handler --- */}
+          {/* FIX for ERR-0001: New Scan Button now calls the modal opener from AppLayout */}
           <Button onClick={onNewScanClick} variant="outline" size="sm" className="hidden md:flex items-center">
             <Icon name="Plus" size={16} className="mr-2"/>
             <span>New Scan</span>
           </Button>
-          <Button variant="default" size="sm" className="hidden md:flex items-center">
+          {/* FIX for ERR-0002: Reports Button now logs action (placeholder) */}
+          <Button onClick={() => console.log('Reports button clicked - Wire up to report module later')} variant="default" size="sm" className="hidden md:flex items-center">
              <Icon name="FileText" size={16} className="mr-2"/>
             <span>Report</span>
           </Button>

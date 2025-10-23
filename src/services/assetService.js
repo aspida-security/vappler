@@ -7,12 +7,22 @@ export const assetService = {
         .from('assets')
         .select(`*, vulnerabilities(count)`)
         .eq('workspace_id', workspaceId)
-        .eq('is_active', true)
+        .eq('is_active', true) 
         .order('risk_score', { ascending: false });
       
       if (filters?.assetType) {
         query = query.eq('asset_type', filters.assetType);
       }
+      
+      // --- VULCAN FIX: MAPPING PHANTOM 'status' FILTER TO REAL 'is_active' COLUMN ---
+      // This handles cases where components (like AssetTable) define a status filter and pass it here.
+      if (filters?.status) {
+         // Map 'online' status (from the AssetTable options) to is_active=true, or any other status to is_active=false
+         const isActiveValue = filters.status === 'online' ? true : false;
+         query = query.eq('is_active', isActiveValue);
+      }
+      // --- END VULCAN FIX ---
+
       const { data, error } = await query;
       if (error) throw error;
       return { data, error: null };

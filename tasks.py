@@ -6,10 +6,9 @@ celery_app = Celery('tasks', broker='redis://vulcan-redis:6379/0', backend='redi
 
 # TASK 1: THE "FREE TIER" LOCAL SCANNER
 @celery_app.task
-def run_local_nmap_task(target, crown_jewel_asset):
+def run_local_nmap_task(target, crown_jewel_asset, scan_id): # <--- VULCAN FIX 1: Accept scan_id
     print(f"[*] Celery worker starting LOCAL Nmap scan for: {target}")
     
-    # --- VULCAN FIX: Correctly instantiate the mapper and call the methods in sequence ---
     # 1. Create the mapper WITH the target
     mapper = NetworkMapper(target_range=target)
     
@@ -20,14 +19,17 @@ def run_local_nmap_task(target, crown_jewel_asset):
     # 3. Generate the final report
     report = mapper.find_attack_path_for_api(crown_jewel=crown_jewel_asset)
     
+    # --- VULCAN FIX 2: Inject scan_id into the report payload ---
+    report['scan_id'] = scan_id
+    
     print(f"[*] Celery worker finished LOCAL Nmap scan for: {target}")
     return report
 
 # TASK 2: THE "PRO TIER" EXTERNAL SCANNER
 @celery_app.task
-def run_hackertarget_task(target, crown_jewel_asset):
+def run_hackertarget_task(target, crown_jewel_asset, scan_id): # <--- VULCAN FIX 1: Accept scan_id
     print(f"[*] Celery worker starting EXTERNAL API scan for: {target}")
-    api_key = "YOUR_API_KEY_HERE" # This can be added later
+    api_key = "YOUR_API_KEY_HERE" 
     api_url = f"https://api.hackertarget.com/nmap/?q={target}&apikey={api_key}"
     
     try:
@@ -39,6 +41,10 @@ def run_hackertarget_task(target, crown_jewel_asset):
             "path": ["attacker", target],
             "vulnerability_details": [{"host": target, "vulnerabilities": [{"details": scan_result}]}]
         }
+        
+        # --- VULCAN FIX 2: Inject scan_id into the report payload ---
+        report['scan_id'] = scan_id
+        
     except requests.exceptions.RequestException as e:
         report = {"error": f"External API call failed: {e}"}
 

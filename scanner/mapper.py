@@ -3,6 +3,17 @@ import networkx as nx
 import json
 import re
 
+# --- VULCAN ENHANCEMENT: KEV Mock List ---
+# In production, this would be dynamically fetched from the CISA API and stored in Supabase.
+KEV_MOCK_LIST = [
+    'CVE-2024-0001', # Mock Critical RCE from mock data in migrations
+    'CVE-2021-44228', # Log4Shell
+    'CVE-2020-0796',  # SMBGhost
+    'CVE-2022-26134', # Confluence RCE
+    'CVE-2024-5678'   # Mock High SQLi from mock data
+]
+# ----------------------------------------
+
 class NetworkMapper:
     def __init__(self, target_range):
         self.target_range = target_range
@@ -31,28 +42,19 @@ class NetworkMapper:
         for host in self.hosts_list:
             print(f"    -> Scanning {host}...")
             try:
-                # --- VULCAN CHANGE: Scan using IP if possible, add addresses to node ---
-                # Attempt to get IP address Nmap found for this host key
+                # --- VULCAN CHANGE (pre-existing) ---
                 try:
-                    # Scan arguments remain the same
                     scan_result = self.scanner.scan(host, arguments='-sV -Pn -T4 --script "vuln"')
-
-                    # Store the primary IPv4 address found by Nmap
-                    # The 'host' key might be a hostname, but nmap stores resolved addresses
-                    ip_address = self.scanner[host]['addresses'].get('ipv4', host) # Fallback to host key if IP not found
-                    # Store it on the graph node for later use
+                    ip_address = self.scanner[host]['addresses'].get('ipv4', host)
                     self.graph.nodes[host]['ip_address'] = ip_address
                     print(f"    [*] Resolved {host} to IP: {ip_address}")
-
                 except KeyError as ke:
-                     # Handle cases where nmap might not populate addresses correctly after scan
-                     print(f"    [!] Warning: Could not reliably determine IP for {host} after scan. KeyError: {ke}. Using '{host}' as fallback.")
-                     self.graph.nodes[host]['ip_address'] = host # Use the original target as fallback
+                     print(f"    [!] Warning: Could not reliably determine IP for {host}. KeyError: {ke}. Using '{host}' as fallback.")
+                     self.graph.nodes[host]['ip_address'] = host
                 except Exception as scan_err:
                      print(f"    [!] Nmap scan execution failed for {host}: {scan_err}")
-                     self.graph.nodes[host]['ip_address'] = host # Fallback on error
-                     continue # Skip vulnerability processing for this host if scan failed
-
+                     self.graph.nodes[host]['ip_address'] = host
+                     continue
 
                 if host not in self.scanner.all_hosts() or 'tcp' not in self.scanner[host]:
                     print(f"    [!] No TCP ports found for {host}.")
@@ -60,12 +62,9 @@ class NetworkMapper:
 
                 for port in self.scanner[host]['tcp']:
                     port_info = self.scanner[host]['tcp'][port]
-                    # --- VULCAN CHANGE: Extract 'vulners' script output more robustly ---
+                    
                     if 'script' in port_info and 'vulners' in port_info['script']:
                         vulners_output = port_info['script']['vulners']
-                        # Example vulners format can vary, adapt regex as needed
-                        # This regex tries to capture CVE/ID, CVSS score, and description line
-                        # Format: CVE-YYYY-NNNN\tCVSS_SCORE\tDESCRIPTION or similar ID CVSS DESC
                         vuln_pattern = re.compile(r'^\s*([^\s]+)\s+([0-9.]+)\s+(.+)$', re.MULTILINE)
                         matches = vuln_pattern.findall(vulners_output)
 
@@ -74,66 +73,88 @@ class NetworkMapper:
                              continue
 
                         for match in matches:
-                            cve_id = match[0] # Could be CVE or other ID like EDB-ID
+                            cve_id = match[0] 
                             try:
                                 cvss_score = float(match[1])
                             except ValueError:
-                                print(f"    [!] Warning: Could not parse CVSS score '{match[1]}' for {cve_id} on {host}:{port}. Defaulting to 0.")
                                 cvss_score = 0.0
 
                             details_line = match[2]
-
+                            
                             severity = "Info"
                             if cvss_score >= 9.0: severity = "Critical"
                             elif cvss_score >= 7.0: severity = "High"
                             elif cvss_score >= 4.0: severity = "Medium"
                             elif cvss_score > 0: severity = "Low"
-
+                            
+                            # --- VULCAN ENHANCEMENT: Check against KEV list ---
+                            is_kev = cve_id in KEV_MOCK_LIST
+                            
                             self.graph.nodes[host]['vulnerabilities'].append({
-                                'cve': cve_id if cve_id.startswith('CVE-') else None, # Store only if it looks like a CVE
-                                'id_from_source': cve_id, # Store the original ID regardless
+                                'cve': cve_id if cve_id.startswith('CVE-') else None, 
+                                'id_from_source': cve_id, 
                                 'cvss_score': cvss_score,
                                 'severity': severity,
-                                'name': details_line, # Use the description line as name for now
-                                'details': f"{cve_id} (CVSS: {cvss_score}) - {details_line}",
+                                'name': details_line,
+                                'details': f"{cve_id} (CVSS: {cvss_score}, KEV: {is_kev}) - {details_line}",
                                 'port': int(port),
-                                'service': port_info.get('name', 'unknown')
+                                'service': port_info.get('name', 'unknown'),
+                                'is_kev': is_kev # Store KEV status
                             })
                     # --- END VULNERS CHANGE ---
                 
                 # --- VULCAN FIX: Inject a hypothetical vulnerability for testing ---
-                # Inject hypothetical vulnerability if needed (no changes here)
                 if self.target_range == 'test-target' and not self.graph.nodes[host]['vulnerabilities']:
                     print("[*] Injecting a hypothetical vulnerability for testing purposes...")
+                    # Inject a KEV to test the new logic
                     self.graph.nodes[host]['vulnerabilities'].append({
-                        # ... (hypothetical vuln data remains same) ...
-                         'cve': 'CVE-2025-DEMO',
-                         'id_from_source': 'CVE-2025-DEMO',
-                         'cvss_score': 9.8,
+                         'cve': 'CVE-2021-44228', # Log4Shell is a real KEV
+                         'id_from_source': 'CVE-2021-44228',
+                         'cvss_score': 10.0,
                          'severity': 'Critical',
-                         'name': 'Hypothetical RCE Vulnerability',
-                         'details': 'This is a simulated critical vulnerability.',
-                         'port': 'http', # Change 80 to 'http' or similar non-numeric string
-                         'service': 'http'
+                         'name': 'Hypothetical KEV RCE Vulnerability (Log4Shell Mock)',
+                         'details': 'This is a simulated critical KEV vulnerability.',
+                         'port': 8080, 
+                         'service': 'http',
+                         'is_kev': True
                     })
 
             except Exception as e:
                 print(f"    [!] An error occurred while processing vulnerabilities for {host}: {e}")
-                # Ensure ip_address exists even if vuln scan fails
                 if 'ip_address' not in self.graph.nodes[host]:
-                    self.graph.nodes[host]['ip_address'] = host # Fallback
+                    self.graph.nodes[host]['ip_address'] = host 
 
     def calculate_risk_weights(self):
-        print("\n[*] Calculating risk weights based on CVSS scores...")
+        print("\n[*] Calculating risk weights based on CVSS scores and KEV status...")
         for node in self.graph.nodes():
             if node == 'attacker': continue
 
             vulnerabilities = self.graph.nodes[node]['vulnerabilities']
             highest_cvss = max((vuln.get('cvss_score', 0) for vuln in vulnerabilities), default=0)
+            
+            # --- VULCAN ENHANCEMENT: KEV Criticality Multiplier ---
+            is_kev_present = any(v.get('is_kev', False) for v in vulnerabilities)
+            
+            effective_cvss = highest_cvss
+            
+            if is_kev_present:
+                # If it's a KEV, we dramatically increase its effective CVSS score, 
+                # ensuring the calculated weight (11 - effective_cvss) is minimal.
+                effective_cvss = min(10.5, highest_cvss * 1.2)
+                print(f"    [!] KEV Alert: {node} has exploited vulnerability. Effective CVSS boosted to {effective_cvss:.2f}")
 
-            weight = max(1, 11 - highest_cvss) 
+            # Weight calculation: Low score = High Risk/Priority
+            # CVSS 10.0 -> Weight 1.0 (Standard)
+            # KEV+CVSS 9.8 -> Effective CVSS 10.5 -> Weight 0.5 (KEV Priority)
+            # The lowest possible path weight is 0.5
+            weight = max(0.5, 11 - effective_cvss) 
             self.graph.edges['attacker', node]['weight'] = weight
-            print(f"    -> Host {node} | Highest CVSS: {highest_cvss} | Risk Weight: {weight}")
+            
+            print(f"    -> Host {node} | Highest CVSS: {highest_cvss:.1f} | Risk Weight: {weight:.2f}")
+    
+    # ... (find_attack_path_for_api remains unchanged as the core logic is sound) ...
+    # ... (rest of the class implementation from mapper.py) ...
+# ... (rest of the class implementation from mapper.py) ...
 
     def find_attack_path_for_api(self, crown_jewel):
         if not self.hosts_list:

@@ -35,7 +35,9 @@ export const workspaceService = {
 
   async getWorkspaceStats(workspaceId) {
     try {
-      const { count: assetCount } = await supabase.from('assets').select('*', { count: 'exact' }).eq('workspace_id', workspaceId).eq('status', 'active');
+      // *** VULCAN FIX: Corrected 'status', 'active' to use the proper boolean column 'is_active', 'true' ***
+      const { count: assetCount } = await supabase.from('assets').select('*', { count: 'exact' }).eq('workspace_id', workspaceId).eq('is_active', true);
+      
       const { data: vulnerabilities } = await supabase.from('vulnerabilities').select('severity, status').eq('workspace_id', workspaceId);
       const { count: activeScanCount } = await supabase.from('scans').select('*', { count: 'exact' }).eq('workspace_id', workspaceId).in('status', ['scheduled', 'running']);
       const { data: topVulns } = await supabase.from('vulnerabilities').select('cvss_score').eq('workspace_id', workspaceId).not('cvss_score', 'is', null).order('cvss_score', { ascending: false }).limit(10);
