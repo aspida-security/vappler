@@ -14,23 +14,17 @@ services:
       - "5000:5000"
     depends_on:
       - redis
-    # --- CRITICAL FIX: ADD env_file DIRECTIVE ---
-    env_file:
-      - .env 
-    # ---------------------------------------------
-    # --- RESOURCE LIMITS FOR API (LIGHTWEIGHT) ---
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-          cpus: '0.25' # Limit to 1/4 of a CPU core
-    # --- END RESOURCE LIMITS ---
     cap_add:
       - NET_RAW
       - NET_ADMIN
     tty: true
     networks:
       - vulcan-net
+    # --- ADDED: Pass Supabase environment variables explicitly ---
+    environment:
+      - VITE_SUPABASE_URL=${VITE_SUPABASE_URL} # Reads from .env file or host environment
+      - VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY} # Reads from .env file or host environment
+    # --- END ADDED SECTION ---
 
   worker:
     build: .
@@ -38,18 +32,10 @@ services:
     command: celery -A tasks.celery_app worker --loglevel=info
     depends_on:
       - redis
-    env_file:             # <--- VULCAN FIX: Load .env file
-      - .env
-    # --- RESOURCE LIMITS FOR WORKER (HEAVY NMAP/PYTHON) ---
-    deploy:
-      resources:
-        limits:
-          memory: 1024M # 1GB cap for scanning tasks
-          cpus: '1.0'  # Limit to a maximum of one full CPU core
-    # --- END RESOURCE LIMITS ---
     tty: true
     networks:
       - vulcan-net
+    # You might also need to pass environment variables here if tasks.py needs them
 
   test-target:
     image: "httpd:alpine"
