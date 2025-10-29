@@ -1,3 +1,4 @@
+# FILE: docker-compose.yml
 version: '3.8'
 
 services:
@@ -20,11 +21,15 @@ services:
     tty: true
     networks:
       - vulcan-net
-    # --- ADDED: Pass Supabase environment variables explicitly ---
+    # --- START MODIFIED SECTION ---
     environment:
-      - VITE_SUPABASE_URL=${VITE_SUPABASE_URL} # Reads from .env file or host environment
-      - VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY} # Reads from .env file or host environment
-    # --- END ADDED SECTION ---
+      # Use host.docker.internal to reach services running on your host machine
+      - SUPABASE_URL=http://host.docker.internal:54321
+      # These will read the corresponding variables from your .env file
+      - SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_KEY=${VITE_SUPABASE_SERVICE_KEY}
+      # You might need to rename VITE_SUPABASE_SERVICE_KEY in your .env if it doesn't exist
+    # --- END MODIFIED SECTION ---
 
   worker:
     build: .
@@ -35,7 +40,7 @@ services:
     tty: true
     networks:
       - vulcan-net
-    # You might also need to pass environment variables here if tasks.py needs them
+    # Consider adding environment variables here too if your worker tasks need Supabase access
 
   test-target:
     image: "httpd:alpine"

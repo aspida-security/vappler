@@ -5,11 +5,11 @@ import Select from './Select';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 
-const Sidebar = ({ 
-  isOpen, 
-  onClose, 
+const Sidebar = ({
+  isOpen,
+  onClose,
   className,
-  workspaces = [],
+  workspaces = [], // Default to empty array
   selectedWorkspace,
   onWorkspaceChange,
   onNewScanClick
@@ -22,13 +22,22 @@ const Sidebar = ({
   const { userProfile, signOut } = useAuth();
   const location = useLocation();
 
+  // --- START FIX ---
   const workspaceOptions = useMemo(() => {
+    // Ensure workspaces is treated as an array
+    if (!Array.isArray(workspaces)) {
+        console.warn("[Sidebar] Workspaces prop is not an array:", workspaces);
+        return [];
+    }
     return workspaces.map(ws => ({
       value: ws.id,
       label: ws.name,
-      description: `undefined assets • undefined`
+      // Correctly access count and format date
+      description: `${ws.assets?.[0]?.count ?? 0} assets • Created: ${ws.created_at ? new Date(ws.created_at).toLocaleDateString() : 'N/A'}`
     }));
-  }, [workspaces]);
+  }, [workspaces]); // Dependency array is correct
+  // --- END FIX ---
+
 
   const navigationItems = [
     {
@@ -116,6 +125,7 @@ const Sidebar = ({
               onChange={onWorkspaceChange}
               searchable
               className="w-full"
+              placeholder={Array.isArray(workspaces) && workspaces.length === 0 ? "No workspaces available" : "Select workspace..."}
             />
           </div>
           <nav className="flex-1 p-6 space-y-2">
@@ -128,7 +138,7 @@ const Sidebar = ({
                 <Link
                   key={item.path}
                   to={item.path}
-                  onClick={onClose}
+                  onClick={onClose} // Close sidebar on mobile navigation
                   className={`
                     flex items-center justify-between w-full p-3 rounded-lg text-left
                     transition-smooth group
@@ -139,9 +149,9 @@ const Sidebar = ({
                   `}
                 >
                   <div className="flex items-center space-x-3">
-                    <Icon 
-                      name={item.icon} 
-                      size={20} 
+                    <Icon
+                      name={item.icon}
+                      size={20}
                       className={isActive ? 'text-primary-foreground' : 'text-current'}
                     />
                     <div>
@@ -154,8 +164,8 @@ const Sidebar = ({
                   {item.badge && (
                     <div className={`
                       flex items-center justify-center min-w-[20px] h-5 px-2 rounded-full text-xs font-medium
-                      ${isActive 
-                        ? 'bg-primary-foreground text-primary' 
+                      ${isActive
+                        ? 'bg-primary-foreground text-primary'
                         : 'bg-accent text-accent-foreground'
                       }
                     `}>
@@ -184,7 +194,7 @@ const Sidebar = ({
               <Button
                   key="gen-report"
                   variant="outline"
-                  onClick={() => console.log('Generate Report')}
+                  onClick={() => console.log('Generate Report clicked')} // Placeholder
                   className="w-full justify-start"
                   iconName="FileText"
                   iconPosition="left"
