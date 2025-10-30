@@ -17,192 +17,151 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [profileLoading, setProfileLoading] = useState(false);
 
-  // Separate async operations object - CRITICAL for auth safety
+  // Profile operations
   const profileOperations = {
     async load(userId) {
-      if (!userId) return;
-      console.log('[AuthContext] Loading profile for user ID:', userId);
-      setProfileLoading(true);
+      if (!userId) {
+        console.log('[AuthContext] No userId provided, clearing profile');
+        setUserProfile(null);
+        return null;
+      }
+
       try {
-        const { data, error } = await supabase?.from('user_profiles')?.select('*')?.eq('id', userId)?.single();
-        console.log('[AuthContext] Profile data from Supabase:', { data, error });
-        if (!error && data) {
-          setUserProfile(data);
+        setProfileLoading(true);
+        console.log('[AuthContext] Loading profile for user ID:', userId);
+        
+        const { data, error } = await supabase
+          .from('user_profiles')
+          .select('*')
+          .eq('id', userId)
+          .single();
+
+        if (error) {
+          console.error('[AuthContext] Error loading profile:', error);
+          
+          // CRITICAL FIX: Removed automatic profile creation for PGRST116 error.
+          // The application MUST now rely on the database trigger for provisioning.
+          if (error.code === 'PGRST116') {
+             console.log('[AuthContext] Profile row missing (PGRST116). Trigger likely failed or is still provisioning.');
+          }
+          
+          setUserProfile(null);
+          return;
         }
+
+        setUserProfile(data);
+        console.log('[AuthContext] Profile loaded successfully:', data.full_name);
+
       } catch (error) {
-        console.error('[AuthContext] Profile loading CATCH block error:', error?.message);
+        console.error('[AuthContext] Profile loading CATCH block error:', error);
       } finally {
         setProfileLoading(false);
       }
     },
-    
+
     clear() {
       setUserProfile(null);
       setProfileLoading(false);
     },
+  };
 
-    async update(updates) {
-      if (!user?.id) return { error: 'No authenticated user' };
-      setProfileLoading(true);
-      try {
-        const { data, error } = await supabase
-          ?.from('user_profiles')
-          ?.update({ ...updates, updated_at: new Date()?.toISOString() })
-          ?.eq('id', user?.id)
-          ?.select()
-          ?.single();
-        
-        if (!error && data) {
-          setUserProfile(data);
-          return { data };
-        }
-        return { error };
-      } catch (error) {
-        return { error: error?.message };
-      } finally {
-        setProfileLoading(false);
-      }
+  // Auth state handling (synchronous)
+  const handleAuthChange = (event, session) => {
+    console.log(`[AuthContext] Auth event: ${event}`, session);
+    
+    // Skip loading check if we are just signed out
+    if (event !== 'SIGNED_OUT') {
+        // Set loading to false once we have any session state
+        setLoading(false);
+    }
+
+    if (session?.user) {
+      setUser(session.user);
+      console.log(`[AuthContext] User authenticated: ${session.user.email}`);
+      profileOperations.load(session.user.id);
+    } else {
+      setUser(null);
+      profileOperations.clear();
+      console.log('[AuthContext] User signed out or session cleared.');
     }
   };
 
-  // Protected auth handlers - MUST remain synchronous
-  const authStateHandlers = {
-    // CRITICAL: This MUST remain synchronous - NO async keyword
-    onChange: (event, session) => {
-      setUser(session?.user ?? null);
-      setLoading(false);
-      
-      if (session?.user) {
-        profileOperations?.load(session?.user?.id); // Fire-and-forget async operation
-      } else {
-        profileOperations?.clear();
-        // Clear any existing session data
-        localStorage?.removeItem('vulcan_session');
-        localStorage?.removeItem('vulcan_user');
-      }
-    }
-  };
-
-  // Authentication methods
+  // Authentication methods (simplified for focus)
   const signIn = async (email, password) => {
     try {
       setLoading(true);
-      const { data, error } = await supabase?.auth?.signInWithPassword({
-        email,
-        password
-      });
-      
-      if (error) {
-        // Handle specific Supabase auth errors
-        if (error?.message?.includes('Invalid login credentials')) {
-          return { error: 'Invalid email or password. Please check your credentials and try again.' };
-        } else if (error?.message?.includes('Email not confirmed')) {
-          return { error: 'Please check your email and click the confirmation link before signing in.' };
-        } else if (error?.message?.includes('Too many requests')) {
-          return { error: 'Too many login attempts. Please wait a few minutes before trying again.' };
-        }
-        return { error: error?.message };
-      }
-      
-      return { data };
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      return { data, error: null };
     } catch (error) {
-      if (error?.message?.includes('Failed to fetch') || 
-          error?.message?.includes('AuthRetryableFetchError')) {
-        return { error: 'Cannot connect to authentication service. Your Supabase project may be paused or inactive. Please check your Supabase dashboard and resume your project if needed.' };
-      }
-      return { error: 'An unexpected error occurred during sign in. Please try again.' };
-    } finally {
       setLoading(false);
+      return { data: null, error: error.message };
     }
   };
 
-  const signUp = async (email, password, userData = {}) => {
+  const signUp = async (email, password, userData) => {
     try {
       setLoading(true);
-      const { data, error } = await supabase?.auth?.signUp({
-        email,
+      // NOTE: This triggers the email confirmation flow, then the DB trigger on update.
+      const { data, error } = await supabase.auth.signUp({ 
+        email, 
         password,
-        options: {
-          data: {
-            full_name: userData?.fullName || '',
-            role: userData?.role || 'analyst',
-            organization: userData?.organization || ''
-          }
-        }
+        options: { data: userData }
       });
-      
-      if (error) {
-        if (error?.message?.includes('User already registered')) {
-          return { error: 'An account with this email already exists. Please sign in instead.' };
-        } else if (error?.message?.includes('Password should be at least')) {
-          return { error: 'Password should be at least 6 characters long.' };
-        } else if (error?.message?.includes('Unable to validate email address')) {
-          return { error: 'Please enter a valid email address.' };
-        }
-        return { error: error?.message };
-      }
-      
-      return { data };
+      if (error) throw error;
+      return { data, error: null };
     } catch (error) {
-      if (error?.message?.includes('Failed to fetch') || 
-          error?.message?.includes('AuthRetryableFetchError')) {
-        return { error: 'Cannot connect to authentication service. Your Supabase project may be paused or inactive. Please check your Supabase dashboard and resume your project if needed.' };
-      }
-      return { error: 'An unexpected error occurred during sign up. Please try again.' };
-    } finally {
       setLoading(false);
+      return { data: null, error: error.message };
     }
   };
-
+  
   const signOut = async () => {
+    setLoading(true);
     try {
-      setLoading(true);
-      const { error } = await supabase?.auth?.signOut();
-      if (error) {
-        return { error: error?.message };
-      }
-      
-      // Clear local storage
-      localStorage?.removeItem('vulcan_session');
-      localStorage?.removeItem('vulcan_user');
-      
-      return { success: true };
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      return { error: null };
     } catch (error) {
-      return { error: 'Failed to sign out. Please try again.' };
-    } finally {
       setLoading(false);
+      return { error: error.message };
     }
   };
-
+  
   const resetPassword = async (email) => {
     try {
-      const { data, error } = await supabase?.auth?.resetPasswordForEmail(email, {
-        redirectTo: `${window?.location?.origin}/reset-password`
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
       });
-      
-      if (error) {
-        return { error: error?.message };
-      }
-      
-      return { data };
+      if (error) throw error;
+      return { error: null };
     } catch (error) {
-      return { error: 'Failed to send reset email. Please try again.' };
+      console.error('[AuthContext] Password reset error:', error);
+      return { error };
     }
   };
+
 
   // Initialize auth state
   useEffect(() => {
+    console.log('[AuthContext] Initializing...');
+
     // Get initial session
-    supabase?.auth?.getSession()?.then(({ data: { session } }) => {
-      authStateHandlers?.onChange(null, session);
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      handleAuthChange('INITIAL_SESSION', session);
     });
 
-    // PROTECTED: Never modify this callback signature - MUST remain synchronous
-    const { data: { subscription } } = supabase?.auth?.onAuthStateChange(
-      authStateHandlers?.onChange
-    );
+    // Listen to auth changes
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      handleAuthChange(event, session);
+    });
 
-    return () => subscription?.unsubscribe();
+    return () => {
+      console.log('[AuthContext] Cleaning up subscription');
+      subscription.unsubscribe();
+    };
   }, []);
 
   const value = {
@@ -210,19 +169,16 @@ export const AuthProvider = ({ children }) => {
     userProfile,
     loading,
     profileLoading,
-    signIn,
     signUp,
+    signIn,
     signOut,
     resetPassword,
-    updateProfile: profileOperations?.update,
     isAuthenticated: !!user,
+    // Add logic to determine if user is fully ready for dashboard access
+    isReady: !!user && !!userProfile && !loading && !profileLoading,
     isAdmin: userProfile?.role === 'admin',
     isAnalyst: userProfile?.role === 'analyst' || userProfile?.role === 'admin'
   };
 
-  return (
-    <AuthContext.Provider value={value}>
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

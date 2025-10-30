@@ -1,3 +1,4 @@
+// src/layouts/AppLayout.jsx
 import React, { useState, useEffect } from 'react';
 import { Outlet, useOutletContext, useNavigate } from 'react-router-dom';
 import Sidebar from '../components/ui/Sidebar';
@@ -11,6 +12,17 @@ import { vulnerabilityService } from '../services/vulnerabilityService';
 // --- FIX 1: Import the Supabase client ---
 import { supabase } from '../lib/supabase';
 import Icon from '../components/AppIcon'; // Import Icon for status messages
+
+// Helper to map scanner severity string to DB enum value
+const mapSeverity = (severity) => {
+    if (!severity) return 'Medium';
+    const lower = severity.toLowerCase();
+    if (lower.includes('critical')) return 'Critical';
+    if (lower.includes('high')) return 'High';
+    if (lower.includes('medium')) return 'Medium';
+    if (lower.includes('low')) return 'Low';
+    return 'Info';
+};
 
 /**
  * Handles the logic for finding or creating a network asset.
@@ -95,12 +107,16 @@ const upsertVulnerability = async (vuln, assetId, workspaceId, scanId) => {
   const vulnData = {
     workspace_id: workspaceId,
     asset_id: assetId,
-    scan_id: scanId,
-    cve_id: vuln.cve,
+    // VULCAN FIX: Use the actual scanId passed from Celery result
+    scan_id: scanId || null, 
+    // VULCAN FIX: Use the actual CVE ID
+    cve_id: vuln.cve || null, 
     title: vuln.name || vuln.id_from_source || 'Unknown Vulnerability',
     description: vuln.details,
-    severity: vuln.severity,
-    cvss_score: vuln.cvss_score,
+    // VULCAN FIX: Map severity string to the database ENUM
+    severity: mapSeverity(vuln.severity),
+    // VULCAN FIX: Use the actual CVSS score (default to 0.0)
+    cvss_score: vuln.cvss_score || 0.0,
     status: 'open',
     port: vuln.port,
     service: vuln.service,
@@ -116,9 +132,11 @@ const upsertVulnerability = async (vuln, assetId, workspaceId, scanId) => {
     .eq('asset_id', assetId)
     .eq('title', vulnData.title);
 
+  // If port is present, include it in the uniqueness check
   if (vulnData.port) {
     query = query.eq('port', vulnData.port);
   } else {
+    // If port is null (asset-level vulnerability), explicitly check for null
     query = query.is('port', null);
   }
 
@@ -159,7 +177,9 @@ const AppLayout = () => {
     const [isNewScanModalOpen, setIsNewScanModalOpen] = useState(false);
     const [workspaces, setWorkspaces] = useState([]);
     const [selectedWorkspace, setSelectedWorkspace] = useState('');
-    const { user } = useAuth();
+    
+    // VULCAN FIX: Destructure userProfile to use for default workspace name
+    const { user, userProfile } = useAuth(); 
     const navigate = useNavigate();
 
     const [isScanning, setIsScanning] = useState(false);
@@ -188,7 +208,8 @@ const AppLayout = () => {
         setScanStatusMessage('Processing and saving scan results...');
         
         const hostDetailsList = result.vulnerability_details || [];
-        const scanId = result.scan_id; // Get scan_id from Celery/tasks.py
+        // VULCAN FIX: The scan_id is now correctly injected by the Python worker task.
+        const scanId = result.scan_id; 
         let accumulatedErrors = [];
 
         for (const hostDetails of hostDetailsList) {
@@ -237,6 +258,11 @@ const AppLayout = () => {
         } else {
             setScanError(null);
             setScanStatusMessage('Scan results processed and saved successfully!');
+            
+            // VULCAN FIX: Add a brief pause and then force refresh to update dashboard
+            setTimeout(() => {
+                window.location.reload();
+            }, 3000);
         }
     };
 
@@ -244,6 +270,11 @@ const AppLayout = () => {
     useEffect(() => {
         if (!user) {
             navigate('/login');
+            return;
+        }
+
+        // VULCAN FIX: Guard against running workspace fetch until userProfile is loaded.
+        if (!userProfile) {
             return;
         }
 
@@ -260,12 +291,18 @@ const AppLayout = () => {
                 if (Array.isArray(data)) {
                     console.log(`[AppLayout] Found ${data.length} workspaces.`);
                     setWorkspaces(data);
-                    if (data.length > 0 && (!selectedWorkspace || !data.some(w => w.id === selectedWorkspace))) {
-                        console.log(`[AppLayout] Auto-selecting first workspace: ${data[0].id}`);
-                        setSelectedWorkspace(data[0].id);
-                    } else if (data.length === 0) {
-                        console.log("[AppLayout] No workspaces found for user.");
-                        setSelectedWorkspace('');
+                    
+                    if (data.length > 0) {
+                        // Select existing workspace or the first one if current is invalid
+                        if (!selectedWorkspace || !data.some(w => w.id === selectedWorkspace)) {
+                            console.log(`[AppLayout] Auto-selecting first workspace: ${data[0].id}`);
+                            setSelectedWorkspace(data[0].id);
+                        }
+                    } else {
+                        // VULCAN FIX: REMOVED client-side provisioning. 
+                        // Rely on the server-side trigger (handle_new_user) now.
+                        console.warn("[AppLayout] User has no workspaces. RLS link likely failed or is missing.");
+                        setSelectedWorkspace(''); // Explicitly clear selectedWorkspace, forcing MainDashboard to show 'No Workspace Selected' UI.
                     }
                 } else {
                     console.warn("[AppLayout] Received non-array data for workspaces, setting to empty.", data);
@@ -281,8 +318,9 @@ const AppLayout = () => {
         };
 
         fetchWorkspaces();
-    // --- FIX 2: Add selectedWorkspace to dependency array ---
-    }, [user, navigate, selectedWorkspace]);
+    // VULCAN FIX: Add userProfile to dependency array
+    }, [user, navigate, selectedWorkspace, userProfile]); 
+
 
     // Effect to poll for scan results
     useEffect(() => {
@@ -328,7 +366,6 @@ const AppLayout = () => {
             console.log(`[AppLayout] Clearing poll interval for task ID: ${scanTaskId}`);
             clearInterval(pollInterval);
         };
-    // --- FIX 3: Add selectedWorkspace to dependency array ---
     }, [scanTaskId, selectedWorkspace]);
 
 
@@ -371,7 +408,7 @@ const AppLayout = () => {
         setIsScanning(true);
         setScanStatusMessage('Requesting new scan...');
         try {
-            // --- FIX 4: Pass selectedWorkspace to the scanner API service ---
+            // FIX: Pass selectedWorkspace to the scanner API service
             const response = await scannerApiService.startScan(scanData.target, selectedWorkspace);
             console.log("[AppLayout] Scan request successful. Task ID:", response.task_id);
             setScanTaskId(response.task_id);
@@ -407,7 +444,7 @@ const AppLayout = () => {
                     isMenuOpen={isSidebarOpen}
                     onNewScanClick={openNewScanModal}
                 />
-                <main className="flex-1 overflow-y-auto bg-background p-6 pt-6"> {/* Removed extra padding-top */}
+                <main className="flex-1 overflow-y-auto bg-background p-6 pt-6">
                     {/* Scan Status/Error Display */}
                     {(scanStatusMessage && !scanError) && (
                         <div className="bg-blue-500/10 border border-blue-500/20 text-blue-300 p-4 rounded-lg mb-6 text-sm">

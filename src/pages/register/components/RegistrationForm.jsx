@@ -11,7 +11,7 @@ const RegistrationForm = ({ onSubmit, loading = false, error = null }) => {
     companyName: '',
     fullName: '',
     email: '',
-    organization: '',
+    organization: '', // Redundant field, kept in state but relies on companyName
     role: 'analyst',
     password: '',
     confirmPassword: '',
@@ -149,12 +149,17 @@ const RegistrationForm = ({ onSubmit, loading = false, error = null }) => {
   const handleSubmit = async (e) => {
     e?.preventDefault();
     if (validateForm()) {
+      // VULCAN FIX: Ensure ALL data required by the DB trigger is passed.
       await onSubmit({
         fullName: formData?.fullName,
         email: formData?.email,
         password: formData?.password,
-        organization: formData?.organization,
-        role: formData?.role
+        // Map companyName to organization metadata used by the DB trigger
+        organization: formData?.companyName, 
+        role: formData?.role, // 'analyst' by default
+        specialization: formData?.specialization, 
+        clientCount: formData?.clientCount,
+        companyName: formData?.companyName, // Keep this for display/internal use
       });
     }
   };

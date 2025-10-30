@@ -1,3 +1,4 @@
+// src/services/workspaceService.js
 import { supabase } from '../lib/supabase';
 
 export const workspaceService = {
@@ -15,19 +16,14 @@ export const workspaceService = {
       if (error) throw error;
 
       // --- VULCAN CHANGE: Add placeholder for asset count since it's not fetched ---
-      // Manually add an empty assets array or a count property if needed downstream,
-      // although AppLayout/Sidebar might handle missing data gracefully.
-      // Example: Adding a placeholder count property:
       const dataWithPlaceholder = data?.map(ws => ({ ...ws, assets: [{ count: 0 }] })) || [];
       // --- END VULCAN CHANGE ---
 
-      // return { data, error: null }; // Original return
       return { data: dataWithPlaceholder, error: null }; // Return data with placeholder
 
     } catch (error) {
        console.error("[workspaceService] Error in getWorkspaces:", error); // Added logging
-      // --- VULCAN CHANGE: Pass a more specific error message back ---
-      // Original: return { data: null, error: error.message };
+      // --- VULCAN CHANGE: Pass a more specific error message back ---\
       return { data: null, error: `Database query failed: ${error.message}` };
       // --- END VULCAN CHANGE ---
     }
@@ -105,8 +101,51 @@ export const workspaceService = {
     }
   },
 
-  // --- No changes needed below this line for this specific issue ---
-  async createWorkspace(workspaceData) { /* ... */ },
+  // --- VULCAN FIX: Implement createWorkspace to handle RLS setup (STEP 1) ---
+  async createWorkspace(workspaceData) {
+    try {
+      // 1. Create the workspace
+      const { data: workspace, error: workspaceError } = await supabase
+        .from('workspaces')
+        .insert([{
+            name: workspaceData.name,
+            owner_id: workspaceData.owner_id,
+            client_name: workspaceData.client_name,
+            created_at: new Date().toISOString(),
+            is_active: true
+        }])
+        .select()
+        .single();
+
+      if (workspaceError) {
+        console.error("[workspaceService] Workspace creation failed:", workspaceError);
+        throw workspaceError;
+      }
+
+      // 2. Add the owner as a workspace user/admin for RLS compliance
+      const { error: userError } = await supabase
+        .from('workspace_users')
+        .insert([{
+            workspace_id: workspace.id,
+            user_id: workspace.owner_id,
+            role: 'admin',
+            can_scan: true,
+            can_export: true,
+        }]);
+      
+      if (userError) {
+        // Log the user addition error but proceed with the workspace creation success
+        console.warn("[workspaceService] Failed to add owner to workspace_users:", userError.message);
+      }
+
+      return { data: workspace, error: null };
+    } catch (error) {
+      return { data: null, error: error.message };
+    }
+  },
+  // --- END VULCAN FIX ---
+
+
   async updateWorkspace(id, updates) { /* ... */ },
   async deleteWorkspace(id) { /* ... */ },
   async addUserToWorkspace(workspaceId, userId, role, permissions) { /* ... */ },

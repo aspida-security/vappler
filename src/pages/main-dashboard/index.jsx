@@ -31,8 +31,11 @@ const MainDashboard = () => {
 
   useEffect(() => {
     const loadData = async () => {
+      // NOTE: This check handles the new flow: if selectedWorkspace is null/empty, we stop loading data.
       if (!isAuthenticated || !selectedWorkspace) {
         setLoading(false);
+        // CRITICAL FIX: Ensure error is cleared if selectedWorkspace is null
+        setError(null); 
         return;
       }
       setLoading(true);
@@ -40,23 +43,28 @@ const MainDashboard = () => {
       try {
         const workspaceId = selectedWorkspace;
         const [
-          { data: stats },
-          { data: vulnData },
-          { data: hostsData },
-          { data: scansData }
+          { data: stats, error: statsError },
+          { data: vulnData, error: vulnError },
+          { data: hostsData, error: hostsError },
+          { data: scansData, error: scansError }
         ] = await Promise.all([
           workspaceService.getWorkspaceStats(workspaceId),
           vulnerabilityService.getTopVulnerabilities(workspaceId, 5),
           assetService.getVulnerableHosts(workspaceId, 5),
           scanService.getRecentScans(workspaceId, 5)
         ]);
+
+        if (statsError || vulnError || hostsError || scansError) {
+          throw new Error(statsError || vulnError || hostsError || scansError);
+        }
+
         setWorkspaceStats(stats || {});
         setTopVulnerabilities(vulnData || []);
         setVulnerableHosts(hostsData || []);
         setRecentScans(scansData || []);
       } catch (err) {
         console.error('Dashboard loading error:', err.message);
-        setError('Failed to load dashboard data. Please try refreshing the page.');
+        setError('Failed to load dashboard data: ' + err.message);
       } finally {
         setLoading(false);
       }
@@ -64,24 +72,36 @@ const MainDashboard = () => {
     loadData();
   }, [isAuthenticated, selectedWorkspace]);
 
+
+  // CRITICAL FIX: This handles the error state correctly and returns content.
   if (error) {
     return (
-      <div className="text-red-400">Error: {error}</div>
+      <div className="flex flex-col items-center justify-center h-full text-center mt-10 p-6 bg-red-500/10 border border-red-500/20 rounded-lg">
+          <Icon name="AlertTriangle" size={48} className="text-red-500 mb-4" />
+          <h3 className="text-lg font-medium text-red-400">Dashboard Load Error</h3>
+          <p className="text-red-300 mt-2">{error}</p>
+          <p className="text-red-300 text-sm mt-4">Please ensure your database is running and RLS policies are correct, then try reloading.</p>
+      </div>
     );
   }
 
+  // This handles the state where the user is authenticated but the DB trigger hasn't run yet
+  // or the fetch returned 0 workspaces.
   if (!selectedWorkspace) {
       return (
-        <div className="flex flex-col items-center justify-center h-full text-center mt-10">
+        <div className="flex flex-col items-center justify-center h-full text-center mt-10 p-6 bg-card border border-border rounded-lg">
             <Icon name="Inbox" size={48} className="text-muted-foreground mb-4" />
             <h3 className="text-lg font-medium text-foreground">No Workspace Selected</h3>
             <p className="text-muted-foreground">Please select or create a workspace to see the dashboard.</p>
+            <p className="text-muted-foreground text-sm mt-2">
+                If this is your first login, ensure you have clicked the email verification link to automatically provision your workspace.
+            </p>
         </div>
       );
   }
 
   if (loading) {
-      return <div>Loading Dashboard...</div>;
+      return <div className="text-center p-10"><Icon name="Loader" size={24} className="animate-spin text-primary mx-auto" /> Loading Dashboard...</div>;
   }
 
   return (

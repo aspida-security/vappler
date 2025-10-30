@@ -1,22 +1,29 @@
-// src/components/ProtectedRoute.jsx
-
 import React from 'react';
 import { Navigate, Outlet } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
 const ProtectedRoute = () => {
-  const { isAuthenticated, loading } = useAuth();
+  const { user, loading } = useAuth();
 
-  // While the AuthContext is loading and checking the session,
-  // we don't want to render anything to avoid screen flicker.
+  // CRITICAL FIX: Use the actual loading state from AuthContext.
   if (loading) {
-    return null; 
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gray-900">
+        <div className="text-white">Loading...</div>
+      </div>
+    );
   }
 
-  // Once loading is false, we know the auth state.
-  // If authenticated, render the nested child routes.
-  // Otherwise, redirect to the login page.
-  return isAuthenticated ? <Outlet /> : <Navigate to="/login" replace />;
+  // FIX: Redirect to /login on sign out or if no user.
+  if (!user) {
+    console.log('[ProtectedRoute] No user, redirecting to /login');
+    return <Navigate to="/login" replace />; 
+  }
+
+  console.log('[ProtectedRoute] User authenticated, rendering children');
+  
+  // NOTE: We rely on AppLayout to handle the subsequent workspace loading state.
+  return <Outlet />;
 };
 
 export default ProtectedRoute;
