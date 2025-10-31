@@ -41,8 +41,8 @@ const Login = () => {
   return (
     <>
       <Helmet>
-        <title>Login - Vulcan Scan | Enterprise Vulnerability Management</title>
-        <meta name="description" content="Secure login to Vulcan Scan vulnerability management platform for cybersecurity consultants and MSSPs." />
+        <title>Login - Vappler | Enterprise Vulnerability Management</title>
+        <meta name="description" content="Secure login to Vappler vulnerability management platform for cybersecurity consultants and MSSPs." />
         <meta name="keywords" content="vulnerability management, cybersecurity, login, security platform" />
       </Helmet>
 
@@ -67,8 +67,8 @@ const Login = () => {
             <div className="text-center">
               <p className="text-sm font-medium text-primary mb-2">Demo Credentials</p>
               <div className="space-y-1 text-xs text-muted-foreground">
-                <p><strong>Admin:</strong> admin@vulcanscan.com / VulcanScan2024!</p>
-                <p><strong>Analyst:</strong> analyst@vulcanscan.com / AnalystPass123!</p>
+                <p><strong>Admin:</strong> admin@vappler.com / Vappler2024!</p>
+                <p><strong>Analyst:</strong> analyst@vappler.com / AnalystPass123!</p>
               </div>
             </div>
           </div>

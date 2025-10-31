@@ -11,7 +11,7 @@ const LoginHeader = () => {
       </div>
       
       <h1 className="text-3xl font-bold text-foreground mb-2">
-        Welcome to Vulcan Scan
+        Welcome to Vappler
       </h1>
       
       <p className="text-lg text-muted-foreground mb-4">

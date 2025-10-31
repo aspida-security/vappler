@@ -108,7 +108,7 @@ const SubnetMap = ({ subnets, onSubnetSelect }) => {
                   <div
                     className={`h-2 rounded-full ${
                       subnet?.coverage >= 80 ? 'bg-green-500' :
-                      subnet?.coverage >= 60 ? 'bg-yellow-500': 'bg-red-500'
+                      subnet?.coverage >= 60 ? 'bg-yellow-500': 'bg-primary' // VAPPLER CHANGE: Use Primary (Teal) for Low Coverage
                     }`}
                     style={{ width: `${subnet?.coverage}%` }}
                   />
@@ -194,7 +194,6 @@ const SubnetMap = ({ subnets, onSubnetSelect }) => {
           </div>
         )}
 
-        {/* Empty State */}
         {subnets?.length === 0 && (
           <div className="text-center py-12">
             <Icon name="Network" size={48} className="mx-auto text-muted-foreground mb-4" />

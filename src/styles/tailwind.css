@@ -7,14 +7,14 @@
 @layer base {
   :root {
     /* Core Colors */
-    --color-background: #0F172A; /* slate-900 */
-    --color-foreground: #F8FAFC; /* slate-50 */
+    --color-background: #181D1E; /* New Dark Charcoal Background */
+    --color-foreground: #F8FAFC; /* slate-50 (Default Contrast) */
     --color-border: rgba(148, 163, 184, 0.2); /* slate-400 with opacity */
-    --color-input: #1E293B; /* slate-800 */
-    --color-ring: #0EA5E9; /* sky-500 */
+    --color-input: #4A5557; /* New Primary Base (Charcoal) */
+    --color-ring: #00C8B4; /* New Electric Teal Accent */
     
     /* Card Colors */
-    --color-card: #1E293B; /* slate-800 */
+    --color-card: #1E293B; /* slate-800 (Darker surface for cards) */
     --color-card-foreground: #F8FAFC; /* slate-50 */
     
     /* Popover Colors */
@@ -25,35 +25,35 @@
     --color-muted: #334155; /* slate-700 */
     --color-muted-foreground: #94A3B8; /* slate-400 */
     
-    /* Primary Colors */
-    --color-primary: #1E40AF; /* blue-800 */
-    --color-primary-foreground: #F8FAFC; /* slate-50 */
+    /* Primary Colors (Mapped to Vappler Accent/Teal) */
+    --color-primary: #00C8B4; /* Electric Teal Accent Color */
+    --color-primary-foreground: #0F172A; /* Slate-900 (High contrast on Teal) */
     
-    /* Secondary Colors */
+    /* Secondary Colors (Maintain existing soft gray for low-emphasis buttons) */
     --color-secondary: #64748B; /* slate-500 */
     --color-secondary-foreground: #F8FAFC; /* slate-50 */
     
-    /* Destructive Colors */
+    /* Destructive Colors (Maintain semantic meaning) */
     --color-destructive: #EF4444; /* red-500 */
     --color-destructive-foreground: #F8FAFC; /* slate-50 */
     
-    /* Accent Colors */
-    --color-accent: #0EA5E9; /* sky-500 */
-    --color-accent-foreground: #F8FAFC; /* slate-50 */
+    /* Accent Colors (Mapped to Vappler Accent/Teal) */
+    --color-accent: #00C8B4; /* Electric Teal Accent Color */
+    --color-accent-foreground: #0F172A; /* Slate-900 */
     
-    /* Success Colors */
+    /* Success Colors (Maintain semantic green for security-related "healthy" status) */
     --color-success: #10B981; /* emerald-500 */
     --color-success-foreground: #F8FAFC; /* slate-50 */
     
-    /* Warning Colors */
+    /* Warning Colors (Maintain semantic meaning) */
     --color-warning: #F59E0B; /* amber-500 */
     --color-warning-foreground: #0F172A; /* slate-900 */
     
-    /* Error Colors */
+    /* Error Colors (Maintain semantic meaning) */
     --color-error: #EF4444; /* red-500 */
     --color-error-foreground: #F8FAFC; /* slate-50 */
     
-    /* Surface Colors */
+    /* Surface Colors (Mapped to Darker Card Background) */
     --color-surface: #1E293B; /* slate-800 */
     --color-surface-foreground: #F8FAFC; /* slate-50 */
     

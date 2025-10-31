@@ -8,7 +8,7 @@ const RecentScanActivity = ({ scans, onViewDetails }) => {
       case 'completed':
         return 'text-green-500 bg-green-500/10 border-green-500/20';
       case 'running':
-        return 'text-blue-500 bg-blue-500/10 border-blue-500/20';
+        return 'text-primary bg-primary/10 border-primary/20'; // VAPPLER CHANGE: Use Primary (Teal) for Running
       case 'failed':
         return 'text-red-500 bg-red-500/10 border-red-500/20';
       case 'paused':
@@ -48,8 +48,8 @@ const RecentScanActivity = ({ scans, onViewDetails }) => {
     <div className="bg-card border border-border rounded-lg p-6 shadow-elevation">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center space-x-3">
-          <div className="flex items-center justify-center w-10 h-10 bg-blue-500/10 rounded-lg">
-            <Icon name="Activity" size={20} className="text-blue-500" />
+          <div className="flex items-center justify-center w-10 h-10 bg-primary/10 rounded-lg">
+            <Icon name="Activity" size={20} className="text-primary" />
           </div>
           <div>
             <h3 className="text-lg font-semibold text-foreground">Recent Scan Activity</h3>
@@ -110,7 +110,7 @@ const RecentScanActivity = ({ scans, onViewDetails }) => {
                   </div>
                   <div className="w-full bg-muted rounded-full h-1.5">
                     <div 
-                      className="bg-blue-500 h-1.5 rounded-full transition-all duration-300"
+                      className="bg-primary h-1.5 rounded-full transition-all duration-300"
                       style={{ width: `${scan?.progress}%` }}
                     />
                   </div>

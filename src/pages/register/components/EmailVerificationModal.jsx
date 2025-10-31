@@ -140,7 +140,7 @@ const EmailVerificationModal = ({ isOpen, onClose, email, onVerificationComplete
               <Icon name="HelpCircle" size={16} className="text-muted-foreground mt-0.5" />
               <div className="text-xs text-muted-foreground">
                 <p className="font-medium mb-1">Having trouble?</p>
-                <p>Check your spam folder or contact support at support@vulcanscan.com</p>
+                <p>Check your spam folder or contact support at support@vappler.com</p>
               </div>
             </div>
           </div>

@@ -74,7 +74,7 @@ const AssetDiscovery = ({ onDiscoveryStart, discoveryStatus }) => {
 
   const getStatusColor = (status) => {
     switch (status) {
-      case 'running': return 'text-blue-500';
+      case 'running': return 'text-primary'; // VAPPLER CHANGE: Use Primary (Teal) for Running
       case 'completed': return 'text-green-500';
       case 'failed': return 'text-red-500';
       default: return 'text-muted-foreground';
@@ -141,7 +141,7 @@ const AssetDiscovery = ({ onDiscoveryStart, discoveryStatus }) => {
             <div className="text-sm text-muted-foreground">
               {discoveryStatus?.isRunning ? (
                 <div className="flex items-center space-x-2">
-                  <Icon name="Loader" size={16} className="text-blue-500 animate-spin" />
+                  <Icon name="Loader" size={16} className="text-primary animate-spin" /> {/* VAPPLER CHANGE: Use Primary (Teal) for Running */}
                   <span>Discovery in progress... {discoveryStatus?.progress}%</span>
                 </div>
               ) : (

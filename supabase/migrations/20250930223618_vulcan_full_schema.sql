@@ -1,4 +1,4 @@
--- Location: supabase/migrations/20250930223618_vulcan_vulnerability_management_system.sql
+-- Location: supabase/migrations/20250930223618_vappler_vulnerability_management_system.sql
 -- Schema Analysis: Fresh project - no existing schema
 -- Integration Type: Complete new schema for vulnerability management system
 -- Dependencies: None - creating complete system
@@ -371,13 +371,13 @@ BEGIN
         phone_change_token, phone_change_sent_at
     ) VALUES
         (admin_uuid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
-         'admin@vulcanscan.com', crypt('VulcanScan2024!', gen_salt('bf', 10)), now(), now(), now(),
-         '{"full_name": "Security Administrator", "role": "admin", "organization": "Vulcan Security"}'::jsonb,
+         'admin@vappler.com', crypt('Vappler2024!', gen_salt('bf', 10)), now(), now(), now(),
+         '{"full_name": "Security Administrator", "role": "admin", "organization": "Vappler Security"}'::jsonb,
          '{"provider": "email", "providers": ["email"]}'::jsonb,
          false, false, '', null, '', null, '', '', null, '', 0, '', null, null, '', '', null),
         (analyst_uuid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
-         'analyst@vulcanscan.com', crypt('AnalystPass123!', gen_salt('bf', 10)), now(), now(), now(),
-         '{"full_name": "Security Analyst", "role": "analyst", "organization": "Vulcan Security"}'::jsonb,
+         'analyst@vappler.com', crypt('AnalystPass123!', gen_salt('bf', 10)), now(), now(), now(),
+         '{"full_name": "Security Analyst", "role": "analyst", "organization": "Vappler Security"}'::jsonb,
          '{"provider": "email", "providers": ["email"]}'::jsonb,
          false, false, '', null, '', null, '', '', null, '', 0, '', null, null, null, '', '', null);
 

@@ -98,8 +98,8 @@ const RiskTrendChart = ({ data, onViewDetails }) => {
             <AreaChart data={data} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
               <defs>
                 <linearGradient id="riskGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="rgb(168, 85, 247)" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="rgb(168, 85, 247)" stopOpacity={0} />
+                  <stop offset="5%" stopColor="rgb(0, 200, 180)" stopOpacity={0.3} /> {/* VULCAN CHANGE: Teal/Accent */}
+                  <stop offset="95%" stopColor="rgb(0, 200, 180)" stopOpacity={0} /> {/* VULCAN CHANGE: Teal/Accent */}
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
@@ -121,7 +121,7 @@ const RiskTrendChart = ({ data, onViewDetails }) => {
               <Area
                 type="monotone"
                 dataKey="riskScore"
-                stroke="rgb(168, 85, 247)"
+                stroke="rgb(0, 200, 180)" /* VULCAN CHANGE: Teal/Accent */
                 strokeWidth={2}
                 fill="url(#riskGradient)"
                 name="Risk Score"
@@ -129,7 +129,7 @@ const RiskTrendChart = ({ data, onViewDetails }) => {
               <Line
                 type="monotone"
                 dataKey="vulnerabilities"
-                stroke="rgb(239, 68, 68)"
+                stroke="rgb(239, 68, 68)" /* Red-500 (Destructive) */
                 strokeWidth={2}
                 dot={{ fill: 'rgb(239, 68, 68)', strokeWidth: 2, r: 4 }}
                 name="Vulnerabilities"
@@ -150,7 +150,7 @@ const RiskTrendChart = ({ data, onViewDetails }) => {
       {data?.length > 0 && (
         <div className="flex items-center justify-center space-x-6 mt-4 pt-4 border-t border-border">
           <div className="flex items-center space-x-2">
-            <div className="w-3 h-3 rounded-full bg-purple-500" />
+            <div className="w-3 h-3 rounded-full bg-primary" /> {/* VULCAN CHANGE: Use Primary */}
             <span className="text-xs text-muted-foreground">Risk Score</span>
           </div>
           <div className="flex items-center space-x-2">

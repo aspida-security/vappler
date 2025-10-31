@@ -9,15 +9,15 @@ const TermsModal = ({ isOpen, onClose, type = 'terms' }) => {
   const title = isTerms ? 'Terms of Service' : 'Privacy Policy';
 
   const termsContent = `
-VULCAN SCAN TERMS OF SERVICE
+VAPPLER TERMS OF SERVICE
 
-Last Updated: September 29, 2025
+Last Updated: October 31, 2025
 
 1. ACCEPTANCE OF TERMS
-By accessing and using Vulcan Scan ("Service"), you accept and agree to be bound by these Terms of Service ("Terms"). If you do not agree to these Terms, you may not use the Service.
+By accessing and using Vappler ("Service"), you accept and agree to be bound by these Terms of Service ("Terms"). If you do not agree to these Terms, you may not use the Service.
 
 2. DESCRIPTION OF SERVICE
-Vulcan Scan is a vulnerability management and cybersecurity scanning platform designed for security consultants and Managed Security Service Providers (MSSPs). The Service provides network discovery, vulnerability scanning, reporting, and management capabilities.
+Vappler is a vulnerability management and cybersecurity scanning platform designed for security consultants and Managed Security Service Providers (MSSPs). The Service provides network discovery, vulnerability scanning, reporting, and management capabilities.
 
 3. USER ACCOUNTS AND REGISTRATION
 3.1 You must provide accurate, current, and complete information during registration
@@ -63,13 +63,13 @@ These Terms are governed by the laws of the United States and the State of Delaw
 11. CHANGES TO TERMS
 We may modify these Terms at any time. Continued use constitutes acceptance of modified Terms.
 
-For questions about these Terms, contact us at legal@vulcanscan.com
+For questions about these Terms, contact us at support@aspidasecurity.io
   `;
 
   const privacyContent = `
-VULCAN SCAN PRIVACY POLICY
+VAPPLER PRIVACY POLICY
 
-Last Updated: September 29, 2025
+Last Updated: October 31, 2025
 
 1. INFORMATION WE COLLECT
 1.1 Account Information: Name, email, company details, and contact information
@@ -126,10 +126,10 @@ We may update this Privacy Policy periodically. We will notify you of significan
 
 11. CONTACT INFORMATION
 For privacy-related questions or requests, contact us at:
-Email: privacy@vulcanscan.com
-Address: Vulcan Scan Privacy Office, 123 Security Blvd, Cyber City, CC 12345
+Email: support@aspidasecurity.io
+Address: Vappler Privacy Office, 7066 Senterfitt Rd Laurel Hill, FL 32567
 
-Data Protection Officer: dpo@vulcanscan.com
+Data Protection Officer: admin@aspidasecurity.io
   `;
 
   const content = isTerms ? termsContent : privacyContent;

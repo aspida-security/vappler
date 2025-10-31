@@ -78,7 +78,7 @@ const AssetTable = ({ assets, onAssetSelect, selectedAssets, onBulkAction }) => 
       case 'Critical': return 'text-red-500';
       case 'High': return 'text-orange-500';
       case 'Medium': return 'text-yellow-500';
-      case 'Low': return 'text-blue-500';
+      case 'Low': return 'text-primary'; // VAPPLER CHANGE: Use Primary (Teal) for Low Risk
       default: return 'text-gray-500';
     }
   };
@@ -87,7 +87,7 @@ const AssetTable = ({ assets, onAssetSelect, selectedAssets, onBulkAction }) => 
     switch (status) {
       case 'online': return { icon: 'CheckCircle', color: 'text-green-500' };
       case 'offline': return { icon: 'XCircle', color: 'text-red-500' };
-      case 'scanning': return { icon: 'Loader', color: 'text-blue-500' };
+      case 'scanning': return { icon: 'Loader', color: 'text-primary' }; // VAPPLER CHANGE: Use Primary (Teal) for Scanning
       default: return { icon: 'HelpCircle', color: 'text-gray-500' };
     }
   };

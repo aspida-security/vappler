@@ -8,8 +8,8 @@ const AssetStats = ({ stats }) => {
       value: stats?.totalAssets,
       change: stats?.assetChange,
       icon: 'Server',
-      color: 'text-blue-500',
-      bgColor: 'bg-blue-500/10'
+      color: 'text-primary', // VAPPLER CHANGE: Use Primary (Teal)
+      bgColor: 'bg-primary/10' // VAPPLER CHANGE: Use Primary (Teal)
     },
     {
       title: 'Online Assets',

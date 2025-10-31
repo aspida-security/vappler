@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import Button from "../../components/ui/Button";
-import Icon from "../../components/AppIcon";
+import Button from '../../components/ui/Button';
+import Icon from '../../components/AppIcon';
 import RegistrationForm from './components/RegistrationForm';
 import TrustSignals from './components/TrustSignals';
 import TermsModal from './components/TermsModal';
@@ -15,9 +15,7 @@ const Register = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [showTerms, setShowTerms] = useState(false);
-  // VULCAN FIX: Use a state variable to show the success message, NOT a modal
-  const [showSuccessMessage, setShowSuccessMessage] = useState(false); 
-  const [termsType, setTermsType] = useState('terms');
+  const [showEmailVerification, setShowEmailVerification] = useState(false);
   const [registrationEmail, setRegistrationEmail] = useState('');
 
   // Redirect if already authenticated
@@ -30,74 +28,37 @@ const Register = () => {
   const handleRegister = async (formData) => {
     setLoading(true);
     setError(null);
-    setShowSuccessMessage(false);
 
     try {
-        // VULCAN FIX: Prepare metadata required by the DB trigger
-        const metadata = {
-            full_name: formData.fullName,
-            // Map Company Name to organization/client_name for the DB trigger
-            organization: formData.organization || formData.companyName || 'Personal', 
-            role: formData.role, // 'analyst'
-            // Add other data if needed by other systems, though the DB trigger uses the top three
-            specialization: formData.specialization, 
-            client_count: formData.clientCount
-        };
-
-        const { data, error: signUpError } = await signUp(
-            formData?.email, 
-            formData?.password, 
-            metadata
-        );
+      const { data, error: signUpError } = await signUp(
+        formData?.email, 
+        formData?.password, 
+        {
+          fullName: formData?.fullName,
+          organization: formData?.organization,
+          role: formData?.role
+        }
+      );
       
-        if (signUpError) {
-            setError(signUpError);
-            return;
-        }
+      if (signUpError) {
+        setError(signUpError);
+        return;
+      }
 
-        if (data?.user) {
-            setRegistrationEmail(formData?.email);
-            // VULCAN FIX: Show success message instructing email check
-            setShowSuccessMessage(true); 
-        }
+      if (data?.user) {
+        setRegistrationEmail(formData?.email);
+        setShowEmailVerification(true);
+      }
     } catch (err) {
       setError('An unexpected error occurred during registration. Please try again.');
     } finally {
       setLoading(false);
     }
   };
-  
-  const handleShowTerms = (type) => {
-      setTermsType(type);
-      setShowTerms(true);
-  };
-  
-  // Renders the success state after signup
-  const renderSuccessState = () => (
-    <div className="bg-card border border-border rounded-lg p-8 shadow-elevation text-center">
-        <Icon name="MailCheck" size={48} className="mx-auto text-success mb-6" />
-        <h2 className="text-2xl font-bold text-foreground mb-3">Check Your Inbox!</h2>
-        <p className="text-muted-foreground mb-6">
-            A confirmation link has been sent to <span className="font-medium text-primary">{registrationEmail}</span>.
-        </p>
-        <p className="text-sm text-muted-foreground mb-8">
-            Click the link in the email to verify your account and complete the provisioning of your secure workspace.
-        </p>
-        <Button
-            variant="default"
-            onClick={() => navigate('/login')}
-            iconName="LogIn"
-            iconPosition="left"
-            fullWidth
-        >
-            Go to Login
-        </Button>
-    </div>
-  );
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header (Keep same as original) */}
+      {/* Header */}
       <header className="border-b border-border bg-card">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
@@ -115,7 +76,7 @@ const Register = () => {
             <div className="flex items-center space-x-4">
               <span className="text-sm text-muted-foreground">Already have an account?</span>
               <Button
-                variant="outline"
+                variant="default" // VULCAN CHANGE: Using 'default' will use the new Teal
                 onClick={() => navigate('/login')}
                 iconName="LogIn"
                 iconPosition="left"
@@ -129,57 +90,88 @@ const Register = () => {
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-          {/* Left Column - Form / Success State */}
+          {/* Left Column - Registration Form */}
           <div className="space-y-8">
-            {showSuccessMessage ? renderSuccessState() : (
-              <>
-                <div className="text-center lg:text-left">
-                  <h1 className="text-3xl font-bold text-foreground mb-4">
-                    Join the Future of Vulnerability Management
-                  </h1>
-                  <p className="text-lg text-muted-foreground mb-6">
-                    Create your account and start delivering enterprise-grade security assessments to your clients without the enterprise costs.
-                  </p>
-                  
-                  {/* Key Benefits - Omitted for brevity */}
-                  {/* ... */}
+            {/* Hero Section */}
+            <div className="text-center lg:text-left">
+              <h1 className="text-3xl font-bold text-foreground mb-4">
+                Join the Future of Vulnerability Management
+              </h1>
+              <p className="text-lg text-muted-foreground mb-6">
+                Create your account and start delivering enterprise-grade security assessments to your clients without the enterprise costs.
+              </p>
+              
+              {/* Key Benefits */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+                <div className="flex items-center space-x-3 p-3 bg-card border border-border rounded-lg">
+                  <div className="flex items-center justify-center w-8 h-8 bg-success/10 rounded-lg">
+                    <Icon name="DollarSign" size={16} className="text-success" />
+                  </div>
+                  <div className="text-left">
+                    <div className="text-sm font-medium text-foreground">80% Cost Savings</div>
+                    <div className="text-xs text-muted-foreground">vs. commercial tools</div>
+                  </div>
                 </div>
-
-                {error && (
-                    <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
-                      <p className="text-sm text-destructive font-medium">{error}</p>
-                    </div>
-                )}
                 
-                {/* Registration Form */}
-                <div className="bg-card border border-border rounded-lg p-6 shadow-elevation">
-                  <RegistrationForm 
-                    onSubmit={handleRegister}
-                    loading={loading}
-                  />
+                <div className="flex items-center space-x-3 p-3 bg-card border border-border rounded-lg">
+                  <div className="flex items-center justify-center w-8 h-8 bg-primary/10 rounded-lg">
+                    <Icon name="Users" size={16} className="text-primary" />
+                  </div>
+                  <div className="text-left">
+                    <div className="text-sm font-medium text-foreground">Multi-Tenant</div>
+                    <div className="text-xs text-muted-foreground">Client workspaces</div>
+                  </div>
                 </div>
+                
+                <div className="flex items-center space-x-3 p-3 bg-card border border-border rounded-lg">
+                  <div className="flex items-center justify-center w-8 h-8 bg-accent/10 rounded-lg">
+                    <Icon name="FileText" size={16} className="text-accent" />
+                  </div>
+                  <div className="text-left">
+                    <div className="text-sm font-medium text-foreground">Professional Reports</div>
+                    <div className="text-xs text-muted-foreground">Custom branding</div>
+                  </div>
+                </div>
+                
+                <div className="flex items-center space-x-3 p-3 bg-card border border-border rounded-lg">
+                  <div className="flex items-center justify-center w-8 h-8 bg-warning/10 rounded-lg">
+                    <Icon name="Zap" size={16} className="text-warning" />
+                  </div>
+                  <div className="text-left">
+                    <div className="text-sm font-medium text-foreground">Real-Time Scanning</div>
+                    <div className="text-xs text-muted-foreground">Live progress tracking</div>
+                  </div>
+                </div>
+              </div>
+            </div>
 
-                {/* Terms Links */}
-                <div className="text-center text-sm text-muted-foreground">
-                  <p>
-                    By creating an account, you agree to our{' '}
-                    <button
-                      onClick={() => handleShowTerms('terms')}
-                      className="text-primary hover:underline"
-                    >
-                      Terms of Service
-                    </button>
-                    {' '}and{' '}
-                    <button
-                      onClick={() => handleShowTerms('privacy')}
-                      className="text-primary hover:underline"
-                    >
-                      Privacy Policy
-                    </button>
-                  </p>
-                </div>
-              </>
-            )}
+            {/* Registration Form */}
+            <div className="bg-card border border-border rounded-lg p-6 shadow-elevation">
+              <RegistrationForm 
+                onSubmit={handleRegister}
+                isLoading={loading}
+              />
+            </div>
+
+            {/* Terms Links */}
+            <div className="text-center text-sm text-muted-foreground">
+              <p>
+                By creating an account, you agree to our{' '}
+                <button
+                  onClick={() => setShowTerms(true)}
+                  className="text-primary hover:underline"
+                >
+                  Terms of Service
+                </button>
+                {' '}and{' '}
+                <button
+                  onClick={() => setShowEmailVerification(true)}
+                  className="text-primary hover:underline"
+                >
+                  Privacy Policy
+                </button>
+              </p>
+            </div>
           </div>
 
           {/* Right Column - Trust Signals */}
@@ -188,7 +180,7 @@ const Register = () => {
           </div>
         </div>
       </main>
-      {/* Footer (Keep same as original) */}
+      {/* Footer */}
       <footer className="border-t border-border bg-card mt-16">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="text-center">
@@ -204,10 +196,10 @@ const Register = () => {
               Enterprise-grade vulnerability management for security professionals
             </p>
             <div className="flex items-center justify-center space-x-6 text-sm text-muted-foreground">
-              <button onClick={() => handleShowTerms('terms')} className="hover:text-foreground">
+              <button onClick={() => setShowTerms(true)} className="hover:text-foreground">
                 Terms of Service
               </button>
-              <button onClick={() => handleShowTerms('privacy')} className="hover:text-foreground">
+              <button onClick={() => setShowEmailVerification(true)} className="hover:text-foreground">
                 Privacy Policy
               </button>
               <span>support@vulcanscan.com</span>
@@ -222,9 +214,13 @@ const Register = () => {
       <TermsModal
         isOpen={showTerms}
         onClose={() => setShowTerms(false)}
-        type={termsType}
+        type="terms"
       />
-      {/* NOTE: EmailVerificationModal is now obsolete and removed from the flow. */}
+      <TermsModal
+        isOpen={showEmailVerification}
+        onClose={() => setShowEmailVerification(false)}
+        type="privacy"
+      />
     </div>
   );
 };
