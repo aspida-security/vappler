@@ -1,3 +1,4 @@
+// src/services/authService.js
 import { supabase } from '../lib/supabase';
 
 export const authService = {
@@ -30,7 +31,11 @@ export const authService = {
             full_name: userData?.fullName || '',
             role: userData?.role || 'analyst',
             organization: userData?.organization || ''
-          }
+          },
+          // *** FINAL FIX: EXPLICITLY FORCE EMAIL CONFIRMATION ***
+          // This overrides local environment flaws that auto-confirm the user,
+          // ensuring the verification email is generated and the session is NOT created immediately.
+          disable_email_confirmation: false
         }
       });
       

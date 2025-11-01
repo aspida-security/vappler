@@ -1,3 +1,5 @@
+// src/components/ProtectedRoute.jsx
+
 import React from 'react';
 import { Navigate, Outlet } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -5,24 +7,26 @@ import { useAuth } from '../contexts/AuthContext';
 const ProtectedRoute = () => {
   const { user, loading } = useAuth();
 
-  // CRITICAL FIX: Use the actual loading state from AuthContext.
+  // 1. Handle Loading State
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-900">
-        <div className="text-white">Loading...</div>
-      </div>
-    );
+    return null;
   }
 
-  // FIX: Redirect to /login on sign out or if no user.
+  // 2. Handle Unauthenticated State
   if (!user) {
     console.log('[ProtectedRoute] No user, redirecting to /login');
-    return <Navigate to="/login" replace />; 
+    return <Navigate to="/login" replace />;
   }
 
-  console.log('[ProtectedRoute] User authenticated, rendering children');
-  
-  // NOTE: We rely on AppLayout to handle the subsequent workspace loading state.
+  // 3. Handle Unverified Email State
+  // ✅ NEW: Redirect to verification page instead of showing inline screen
+  if (!user.email_confirmed_at) {
+    console.log('[ProtectedRoute] Email not confirmed, redirecting to verification page');
+    return <Navigate to="/register/verify-email" replace state={{ email: user.email }} />;
+  }
+
+  // 4. User is authenticated AND verified → Allow access
+  console.log('[ProtectedRoute] ✅ User verified, allowing access');
   return <Outlet />;
 };
 

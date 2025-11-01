@@ -1,7 +1,5 @@
--- Location: supabase/migrations/20250930223618_vappler_vulnerability_management_system.sql
--- Schema Analysis: Fresh project - no existing schema
--- Integration Type: Complete new schema for vulnerability management system
--- Dependencies: None - creating complete system
+-- Location: supabase/migrations/20250930223618_vulcan_full_schema.sql
+-- Integration Type: Complete system schema, functions, RLS, and fixes.
 
 -- 1. Extensions & Types
 CREATE TYPE public.user_role AS ENUM ('admin', 'analyst', 'viewer', 'client');
@@ -90,7 +88,7 @@ CREATE TABLE public.vulnerabilities (
     service TEXT,
     proof_of_concept TEXT,
     remediation_steps TEXT,
-    "references" TEXT[], -- FIX: Wrapped the reserved keyword in quotes
+    "references" TEXT[],
     discovered_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
@@ -125,7 +123,29 @@ CREATE INDEX idx_workspace_users_workspace_id ON public.workspace_users(workspac
 CREATE INDEX idx_workspace_users_user_id ON public.workspace_users(user_id);
 
 -- 9. Functions (MUST BE BEFORE RLS POLICIES)
--- *** FINAL ATOMIC PROVISIONING FUNCTION (Core Auth Fix) ***
+
+-- RLS PERFORMANCE FIX: Helper function to efficiently check workspace membership.
+CREATE OR REPLACE FUNCTION public.is_workspace_member(p_workspace_id UUID)
+RETURNS BOOLEAN
+SECURITY DEFINER
+STABLE -- CRITICAL: Allows the query planner to cache/optimize calls
+LANGUAGE sql
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.workspaces w
+    WHERE w.id = p_workspace_id
+      AND (
+        w.owner_id = auth.uid()
+        OR EXISTS (
+          SELECT 1 FROM public.workspace_users wu
+          WHERE wu.workspace_id = w.id AND wu.user_id = auth.uid()
+        )
+      )
+  );
+$$;
+
+-- ATOMIC PROVISIONING FIX: Ensures RLS links are created only AFTER email confirmation.
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER
 SECURITY DEFINER
@@ -135,7 +155,7 @@ DECLARE
     new_workspace_id UUID;
     profile_role public.user_role;
 BEGIN
-    -- *** CRITICAL ATOMIC CHECK: Only run AFTER email is confirmed ***
+    -- CRITICAL ATOMIC CHECK: Only run AFTER email is confirmed
     IF NEW.email_confirmed_at IS NOT NULL AND (TG_OP = 'INSERT' OR OLD.email_confirmed_at IS NULL) THEN
     
         -- 1. Insert or Update the user profile
@@ -197,7 +217,7 @@ ALTER TABLE public.scans ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.vulnerabilities ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.workspace_users ENABLE ROW LEVEL SECURITY;
 
--- 11. RLS Policies (Pattern 1 for user_profiles, Pattern 2 for others)
+-- 11. RLS Policies (Updated to use the efficient helper function)
 
 -- Pattern 1: Core user table (user_profiles) - Simple direct access
 CREATE POLICY "users_manage_own_user_profiles"
@@ -227,47 +247,22 @@ USING (
   )
 );
 
--- Pattern 2: Assets belong to workspace owner or members (CORRECTED POLICY)
+-- RLS PERFORMANCE FIX: Assets Policy (Simplified and optimized)
+DROP POLICY IF EXISTS "workspace_members_manage_assets" ON public.assets;
 CREATE POLICY "workspace_members_manage_assets"
 ON public.assets
 FOR ALL
 TO authenticated
-USING (
-  workspace_id IN (
-    SELECT w.id FROM public.workspaces w
-    WHERE w.owner_id = auth.uid()
-    OR EXISTS (
-      SELECT 1 FROM public.workspace_users wu
-      WHERE wu.workspace_id = w.id AND wu.user_id = auth.uid()
-    )
-  )
-)
-WITH CHECK (
-  workspace_id IN (
-    SELECT w.id FROM public.workspaces w
-    WHERE w.owner_id = auth.uid()
-    OR EXISTS (
-      SELECT 1 FROM public.workspace_users wu
-      WHERE wu.workspace_id = w.id AND wu.user_id = auth.uid()
-    )
-  )
-);
+USING (public.is_workspace_member(workspace_id))
+WITH CHECK (public.is_workspace_member(workspace_id));
 
--- Pattern 2: Scans access
+-- RLS PERFORMANCE FIX: Scans access Policy (Simplified and optimized)
+DROP POLICY IF EXISTS "workspace_members_manage_scans" ON public.scans;
 CREATE POLICY "workspace_members_manage_scans"
 ON public.scans
 FOR ALL
 TO authenticated
-USING (
-  workspace_id IN (
-    SELECT w.id FROM public.workspaces w
-    WHERE w.owner_id = auth.uid()
-    OR EXISTS (
-      SELECT 1 FROM public.workspace_users wu
-      WHERE wu.workspace_id = w.id AND wu.user_id = auth.uid()
-    )
-  )
-)
+USING (public.is_workspace_member(workspace_id))
 WITH CHECK (
   workspace_id IN (
     SELECT w.id FROM public.workspaces w
@@ -279,31 +274,14 @@ WITH CHECK (
   )
 );
 
--- Pattern 2: Vulnerabilities access
+-- RLS PERFORMANCE FIX: Vulnerabilities access Policy (Simplified and optimized)
+DROP POLICY IF EXISTS "workspace_members_manage_vulnerabilities" ON public.vulnerabilities;
 CREATE POLICY "workspace_members_manage_vulnerabilities"
 ON public.vulnerabilities
 FOR ALL
 TO authenticated
-USING (
-  workspace_id IN (
-    SELECT w.id FROM public.workspaces w
-    WHERE w.owner_id = auth.uid()
-    OR EXISTS (
-      SELECT 1 FROM public.workspace_users wu
-      WHERE wu.workspace_id = w.id AND wu.user_id = auth.uid()
-    )
-  )
-)
-WITH CHECK (
-  workspace_id IN (
-    SELECT w.id FROM public.workspaces w
-    WHERE w.owner_id = auth.uid()
-    OR EXISTS (
-      SELECT 1 FROM public.workspace_users wu
-      WHERE wu.workspace_id = w.id AND wu.user_id = auth.uid()
-    )
-  )
-);
+USING (public.is_workspace_member(workspace_id))
+WITH CHECK (public.is_workspace_member(workspace_id));
 
 -- Pattern 2: Workspace users - owners and members can manage
 CREATE POLICY "workspace_owners_manage_users"
@@ -348,87 +326,4 @@ CREATE TRIGGER update_vulnerabilities_updated_at
   FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
 
 -- 13. Mock Data with Complete Auth Users
-DO $$
-DECLARE
-    admin_uuid UUID := gen_random_uuid();
-    analyst_uuid UUID := gen_random_uuid();
-    workspace1_uuid UUID := gen_random_uuid();
-    workspace2_uuid UUID := gen_random_uuid();
-    asset1_uuid UUID := gen_random_uuid();
-    asset2_uuid UUID := gen_random_uuid();
-    asset3_uuid UUID := gen_random_uuid();
-    scan1_uuid UUID := gen_random_uuid();
-    scan2_uuid UUID := gen_random_uuid();
-BEGIN
-    -- Create complete auth.users records with all required fields
-    INSERT INTO auth.users (
-        id, instance_id, aud, role, email, encrypted_password, email_confirmed_at,
-        created_at, updated_at, raw_user_meta_data, raw_app_meta_data,
-        is_sso_user, is_anonymous, confirmation_token, confirmation_sent_at,
-        recovery_token, recovery_sent_at, email_change_token_new, email_change,
-        email_change_sent_at, email_change_token_current, email_change_confirm_status,
-        reauthentication_token, reauthentication_sent_at, phone, phone_change,
-        phone_change_token, phone_change_sent_at
-    ) VALUES
-        (admin_uuid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
-         'admin@vappler.com', crypt('Vappler2024!', gen_salt('bf', 10)), now(), now(), now(),
-         '{"full_name": "Security Administrator", "role": "admin", "organization": "Vappler Security"}'::jsonb,
-         '{"provider": "email", "providers": ["email"]}'::jsonb,
-         false, false, '', null, '', null, '', '', null, '', 0, '', null, null, '', '', null),
-        (analyst_uuid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
-         'analyst@vappler.com', crypt('AnalystPass123!', gen_salt('bf', 10)), now(), now(), now(),
-         '{"full_name": "Security Analyst", "role": "analyst", "organization": "Vappler Security"}'::jsonb,
-         '{"provider": "email", "providers": ["email"]}'::jsonb,
-         false, false, '', null, '', null, '', '', null, '', 0, '', null, null, null, '', '', null);
-
-    -- Create workspaces
-    INSERT INTO public.workspaces (id, name, description, owner_id, client_name, client_contact_email) VALUES
-        (workspace1_uuid, 'Acme Corporation', 'Primary enterprise client', admin_uuid, 'Acme Corp', 'security@acme.com'),
-        (workspace2_uuid, 'Tech Solutions Inc', 'Technology consulting firm', admin_uuid, 'Tech Solutions', 'admin@techsolutions.com');
-
-    -- Create assets
-    INSERT INTO public.assets (id, workspace_id, hostname, ip_address, asset_type, operating_system, os_version, open_ports, risk_score, last_scan_at) VALUES
-        (asset1_uuid, workspace1_uuid, 'web-server-01.acme.local', '192.168.1.100', 'server', 'Windows Server 2019', '10.0.17763', ARRAY[80, 443, 3389, 135, 139, 445], 9.2, now() - interval '2 hours'),
-        (asset2_uuid, workspace1_uuid, 'db-primary.acme.local', '192.168.1.50', 'database', 'Ubuntu 20.04 LTS', '20.04.3', ARRAY[22, 3306, 443], 8.7, now() - interval '2 hours'),
-        (asset3_uuid, workspace1_uuid, 'mail-server.acme.local', '192.168.1.25', 'server', 'CentOS 8', '8.4.2105', ARRAY[25, 110, 143, 993, 995, 22], 8.1, now() - interval '3 hours');
-
-    -- Create scans
-    INSERT INTO public.scans (id, workspace_id, name, description, scan_type, status, target_count, progress, started_at, created_by) VALUES
-        (scan1_uuid, workspace1_uuid, 'Full Network Scan - Production', 'Comprehensive vulnerability scan of production environment', 'vulnerability_scan', 'running', 245, 67, now() - interval '2 hours', admin_uuid),
-        (scan2_uuid, workspace2_uuid, 'Web Application Security Test', 'OWASP Top 10 security assessment', 'web_app_scan', 'completed', 12, 100, now() - interval '4 hours', analyst_uuid);
-
-    -- Create vulnerabilities
-    INSERT INTO public.vulnerabilities (workspace_id, asset_id, scan_id, cve_id, title, description, severity, cvss_score, status, port, service, remediation_steps, discovered_at) VALUES
-        (workspace1_uuid, asset1_uuid, scan1_uuid, 'CVE-2024-0001', 'Critical Remote Code Execution in Apache HTTP Server',
-         'A critical vulnerability in Apache HTTP Server allows remote attackers to execute arbitrary code through malformed HTTP requests. This affects versions 2.4.0 through 2.4.58 and requires immediate patching.',
-         'Critical', 9.8, 'open', 80, 'HTTP', 'Update Apache HTTP Server to version 2.4.59 or later. Apply security patches immediately.', now() - interval '1 day'),
-
-        (workspace1_uuid, asset2_uuid, scan1_uuid, 'CVE-2024-0002', 'SQL Injection in Custom Web Application',
-         'Multiple SQL injection vulnerabilities found in the customer portal application. Attackers can extract sensitive database information and potentially gain administrative access.',
-         'High', 8.5, 'confirmed', 3306, 'MySQL', 'Implement parameterized queries and input validation. Update application code to prevent SQL injection attacks.', now() - interval '2 days'),
-
-        (workspace1_uuid, asset1_uuid, scan1_uuid, 'CVE-2024-0003', 'Privilege Escalation in Windows Server',
-         'Local privilege escalation vulnerability in Windows Server 2019 and 2022. Allows authenticated users to gain SYSTEM-level privileges through registry manipulation.',
-         'High', 8.2, 'open', 3389, 'RDP', 'Install Windows security updates KB5028997 and KB5028999. Restrict RDP access to authorized users only.', now() - interval '3 days'),
-
-        (workspace1_uuid, asset3_uuid, scan1_uuid, 'CVE-2024-0004', 'Cross-Site Scripting in Web Portal',
-         'Stored XSS vulnerability in the employee portal allows attackers to inject malicious scripts. Could lead to session hijacking and data theft from authenticated users.',
-         'Medium', 6.1, 'false_positive', 443, 'HTTPS', 'Implement proper input sanitization and output encoding. Use Content Security Policy headers.', now() - interval '4 days'),
-
-        (workspace1_uuid, asset1_uuid, scan1_uuid, 'CVE-2024-0005', 'Weak SSL/TLS Configuration',
-         'Multiple servers are using outdated SSL/TLS protocols and weak cipher suites. This could allow man-in-the-middle attacks and data interception.',
-         'Medium', 5.9, 'accepted', 443, 'HTTPS', 'Update SSL/TLS configuration to use TLS 1.2 or higher. Disable weak cipher suites and enable perfect forward secrecy.', now() - interval '5 days');
-
-    -- Create workspace user relationships
-    INSERT INTO public.workspace_users (workspace_id, user_id, role, can_scan, can_export) VALUES
-        (workspace1_uuid, analyst_uuid, 'analyst', true, true),
-        (workspace2_uuid, analyst_uuid, 'viewer', false, false);
-
-EXCEPTION
-    WHEN foreign_key_violation THEN
-        RAISE NOTICE 'Foreign key error: %', SQLERRM;
-    WHEN unique_violation THEN
-        RAISE NOTICE 'Unique constraint error: %', SQLERRM;
-    WHEN OTHERS THEN
-        RAISE NOTICE 'Unexpected error: %', SQLERRM;
-END $$;
+-- *** REMOVED ALL MOCK DATA TO IMPROVE SYSTEM STABILITY AND ELIMINATE TEST CONFUSION ***

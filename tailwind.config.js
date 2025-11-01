@@ -20,11 +20,18 @@ export default {
       colors: {
         border: "var(--color-border)", /* slate-400 with opacity */
         input: "var(--color-input)", /* slate-800 */
+        // FIX: The focus ring color definition (ring) remains correct, but we introduce charcoal
         ring: "var(--color-ring)", /* sky-500 */
         background: "var(--color-background)", /* slate-900 */
         foreground: "var(--color-foreground)", /* slate-50 */
+        
+        // Custom Charcoal Color definition (Primary Base #4A5557)
+        charcoal: {
+          DEFAULT: '#4A5557', 
+        },
+        
         primary: {
-          DEFAULT: "var(--color-primary)", /* blue-800 */
+          DEFAULT: "var(--color-primary)", /* blue-800 -> Electric Teal */
           foreground: "var(--color-primary-foreground)", /* slate-50 */
         },
         secondary: {
@@ -40,30 +47,17 @@ export default {
           foreground: "var(--color-muted-foreground)", /* slate-400 */
         },
         accent: {
-          DEFAULT: "var(--color-accent)", /* sky-500 */
-          foreground: "var(--color-accent-foreground)", /* slate-50 */
+          DEFAULT: "var(--color-accent)", /* blue-500 -> Electric Teal */
+          foreground: "var(--color-accent-foreground)", /* slate-900 */
         },
         popover: {
-          DEFAULT: "var(--color-popover)", /* slate-800 */
+          DEFAULT: "var(--color-popover)", /* slate-900 */
           foreground: "var(--color-popover-foreground)", /* slate-50 */
         },
         card: {
-          DEFAULT: "var(--color-card)", /* slate-800 */
+          DEFAULT: "var(--color-card)", /* slate-900 */
           foreground: "var(--color-card-foreground)", /* slate-50 */
         },
-        success: {
-          DEFAULT: "var(--color-success)", /* emerald-500 */
-          foreground: "var(--color-success-foreground)", /* slate-50 */
-        },
-        warning: {
-          DEFAULT: "var(--color-warning)", /* amber-500 */
-          foreground: "var(--color-warning-foreground)", /* slate-900 */
-        },
-        error: {
-          DEFAULT: "var(--color-error)", /* red-500 */
-          foreground: "var(--color-error-foreground)", /* slate-50 */
-        },
-        surface: "var(--color-surface)", /* slate-800 */
         'text-primary': "var(--color-text-primary)", /* slate-50 */
         'text-secondary': "var(--color-text-secondary)", /* slate-400 */
       },
@@ -100,16 +94,7 @@ export default {
         "fade-in": "fade-in 0.15s ease-out",
         "slide-in": "slide-in 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
       },
-      boxShadow: {
-        'elevation': '0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24)',
-        'elevation-lg': '0 4px 6px rgba(0, 0, 0, 0.12), 0 2px 4px rgba(0, 0, 0, 0.24)',
-      },
-      backdropBlur: {
-        xs: '2px',
-      },
     },
   },
-  plugins: [
-    require("tailwindcss-animate"),
-  ],
+  plugins: [require("tailwindcss-animate")],
 }

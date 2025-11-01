@@ -6,57 +6,59 @@
 
 @layer base {
   :root {
+    /* Note: Assuming this block is inside a :root or .dark selector in your CSS */
+
     /* Core Colors */
     --color-background: #181D1E; /* New Dark Charcoal Background */
     --color-foreground: #F8FAFC; /* slate-50 (Default Contrast) */
     --color-border: rgba(148, 163, 184, 0.2); /* slate-400 with opacity */
     --color-input: #4A5557; /* New Primary Base (Charcoal) */
     --color-ring: #00C8B4; /* New Electric Teal Accent */
-    
+
     /* Card Colors */
-    --color-card: #1E293B; /* slate-800 (Darker surface for cards) */
+    --color-card: #2A3236; /* Charcoal-800 (Darker surface for cards) */
     --color-card-foreground: #F8FAFC; /* slate-50 */
-    
+
     /* Popover Colors */
-    --color-popover: #1E293B; /* slate-800 */
+    --color-popover: #2A3236; /* Charcoal-800 */
     --color-popover-foreground: #F8FAFC; /* slate-50 */
-    
+
     /* Muted Colors */
-    --color-muted: #334155; /* slate-700 */
+    --color-muted: #3A4447; /* Charcoal-700 */
     --color-muted-foreground: #94A3B8; /* slate-400 */
-    
+
     /* Primary Colors (Mapped to Vappler Accent/Teal) */
     --color-primary: #00C8B4; /* Electric Teal Accent Color */
-    --color-primary-foreground: #0F172A; /* Slate-900 (High contrast on Teal) */
-    
+    --color-primary-foreground: #101314; /* Charcoal-900 (High contrast on Teal) */
+
     /* Secondary Colors (Maintain existing soft gray for low-emphasis buttons) */
-    --color-secondary: #64748B; /* slate-500 */
+    --color-secondary: #5F6D71; /* Charcoal-500 */
     --color-secondary-foreground: #F8FAFC; /* slate-50 */
-    
+
     /* Destructive Colors (Maintain semantic meaning) */
     --color-destructive: #EF4444; /* red-500 */
     --color-destructive-foreground: #F8FAFC; /* slate-50 */
-    
+
     /* Accent Colors (Mapped to Vappler Accent/Teal) */
     --color-accent: #00C8B4; /* Electric Teal Accent Color */
-    --color-accent-foreground: #0F172A; /* Slate-900 */
-    
+    --color-accent-foreground: #101314; /* Charcoal-900 */
+
     /* Success Colors (Maintain semantic green for security-related "healthy" status) */
     --color-success: #10B981; /* emerald-500 */
     --color-success-foreground: #F8FAFC; /* slate-50 */
-    
+
     /* Warning Colors (Maintain semantic meaning) */
     --color-warning: #F59E0B; /* amber-500 */
-    --color-warning-foreground: #0F172A; /* slate-900 */
-    
+    --color-warning-foreground: #101314; /* Charcoal-900 */
+
     /* Error Colors (Maintain semantic meaning) */
     --color-error: #EF4444; /* red-500 */
     --color-error-foreground: #F8FAFC; /* slate-50 */
-    
+
     /* Surface Colors (Mapped to Darker Card Background) */
-    --color-surface: #1E293B; /* slate-800 */
+    --color-surface: #2A3236; /* Charcoal-800 */
     --color-surface-foreground: #F8FAFC; /* slate-50 */
-    
+
     /* Text Colors */
     --color-text-primary: #F8FAFC; /* slate-50 */
     --color-text-secondary: #94A3B8; /* slate-400 */
