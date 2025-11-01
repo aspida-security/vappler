@@ -2,7 +2,7 @@ import requests
 from celery import Celery
 from scanner.mapper import NetworkMapper
 
-celery_app = Celery('tasks', broker='redis://vulcan-redis:6379/0', backend='redis://vulcan-redis:6379/0')
+celery_app = Celery('tasks', broker='redis://vappler-redis:6379/0', backend='redis://vappler-redis:6379/0')
 
 # TASK 1: THE "FREE TIER" LOCAL SCANNER
 @celery_app.task

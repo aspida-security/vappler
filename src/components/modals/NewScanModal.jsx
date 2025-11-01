@@ -77,7 +77,7 @@ const NewScanModal = ({ isOpen, onClose, onSubmit }) => {
             />
             
             <div className="text-xs text-muted-foreground">
-              Examples: `192.168.1.10`, `server.vulcanscan.com`, `10.0.0.0/24`
+              Examples: `192.168.1.10`, `server.vappler.io`, `10.0.0.0/24`
             </div>
 
             {/* Actions */}

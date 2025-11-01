@@ -1,4 +1,4 @@
--- Location: supabase/migrations/20250930223618_vulcan_full_schema.sql
+-- Location: supabase/migrations/20250930223618_vappler_full_schema.sql
 -- Integration Type: Complete system schema, functions, RLS, and fixes.
 
 -- 1. Extensions & Types

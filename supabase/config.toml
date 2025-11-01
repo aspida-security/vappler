@@ -56,7 +56,7 @@ port = 587
 user = "apikey"
 pass = "env(SENDGRID_API_KEY)"
 admin_email = "admin@aspidasecurity.io"
-sender_name = "Vulcan Security"
+sender_name = "Vappler"
 
 [auth.sms]
 enable_signup = true

@@ -30,7 +30,7 @@ const TrustSignals = () => {
       name: 'Sarah Chen',
       role: 'Senior Security Consultant',
       company: 'CyberGuard Solutions',
-      content: `Vulcan Scan replaced our expensive Nessus Pro subscription and delivers the same professional results. The client reporting features are outstanding.`,
+      content: `Vappler replaced our expensive Nessus Pro subscription and delivers the same professional results. The client reporting features are outstanding.`,
       rating: 5
     },
     {

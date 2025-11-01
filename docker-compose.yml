@@ -4,13 +4,13 @@ version: '3.8'
 services:
   redis:
     image: "redis:alpine"
-    container_name: vulcan-redis
+    container_name: vappler-redis
     networks:
-      - vulcan-net
+      - vappler-net
 
   api:
     build: .
-    container_name: vulcan-api
+    container_name: vappler-api
     ports:
       - "5000:5000"
     depends_on:
@@ -20,7 +20,7 @@ services:
       - NET_ADMIN
     tty: true
     networks:
-      - vulcan-net
+      - vappler-net
     # --- START MODIFIED SECTION ---
     environment:
       # Use host.docker.internal to reach services running on your host machine
@@ -33,23 +33,23 @@ services:
 
   worker:
     build: .
-    container_name: vulcan-worker
+    container_name: vappler-worker
     command: celery -A tasks.celery_app worker --loglevel=info
     depends_on:
       - redis
     tty: true
     networks:
-      - vulcan-net
+      - vappler-net
     # Consider adding environment variables here too if your worker tasks need Supabase access
 
   test-target:
     image: "httpd:alpine"
-    container_name: vulcan-test-target
+    container_name: vappler-test-target
     ports:
       - "8080:80"
     networks:
-      - vulcan-net
+      - vappler-net
 
 networks:
-  vulcan-net:
+  vappler-net:
     driver: bridge

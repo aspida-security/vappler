@@ -89,8 +89,8 @@ export const AuthProvider = ({ children }) => {
       } else {
         profileOperations?.clear();
         // Clear any existing session data
-        localStorage?.removeItem('vulcan_session');
-        localStorage?.removeItem('vulcan_user');
+        localStorage?.removeItem('vappler_session');
+        localStorage?.removeItem('vappler_user');
       }
     }
   };
@@ -206,8 +206,8 @@ export const AuthProvider = ({ children }) => {
       }
       
       // Clear local storage
-      localStorage?.removeItem('vulcan_session');
-      localStorage?.removeItem('vulcan_user');
+      localStorage?.removeItem('vappler_session');
+      localStorage?.removeItem('vappler_user');
       
       console.log('[AuthContext] ✅ SignOut successful');
       return { success: true };

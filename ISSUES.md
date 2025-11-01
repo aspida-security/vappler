@@ -1,4 +1,4 @@
-# Vulcan Scan Issue Log
+# Vappler Issue Log
 
 ---
 
