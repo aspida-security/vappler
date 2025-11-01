@@ -13,6 +13,7 @@ import AppLayout from "./layouts/AppLayout";
 // --- VULCAN CHANGE 2: Import all pages ---
 import Login from './pages/login';
 import Register from './pages/register';
+import VerifyEmail from './pages/register/verify-email';
 import ResetPassword from './pages/reset-password';
 import MainDashboard from './pages/main-dashboard';
 import ClientWorkspaceManager from './pages/client-workspace-manager';
@@ -29,6 +30,7 @@ const Routes = () => {
           {/* These routes are accessible without logging in */}
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/register/verify-email" element={<VerifyEmail />} />
           <Route path="/reset-password" element={<ResetPassword />} />
 
           {/* === Protected Routes === */}
