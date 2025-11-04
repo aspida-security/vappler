@@ -335,7 +335,7 @@ const AppLayout = () => {
             try {
               console.log(`[AppLayout] Calling completion endpoint for scan ${scanId}`);
               const completeResponse = await fetch(
-                `http://localhost:5000/scan/${scanId}/complete`,
+                `${import.meta.env.VITE_SCANNER_API_URL}/scan/${scanId}/complete`,
                 {
                   method: 'POST',
                   headers: {
