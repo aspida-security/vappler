@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useOutletContext } from 'react-router-dom';
 import { assetService } from '../../services/assetService';
 import AssetTable from './components/AssetTable';
 import AssetStats from './components/AssetStats';
@@ -17,50 +18,85 @@ const AssetManagement = () => {
   const [activeTab, setActiveTab] = useState('assets');
   
   // Hardcoded data for UI placeholders
-  const [subnets] = useState([]); 
+  const [subnets] = useState([]);
   const [assetGroups, setAssetGroups] = useState([]);
-  const [discoveryStatus, setDiscoveryStatus] = useState({ isRunning: false, progress: 0 });
+  const [discoveryStatus, setDiscoveryStatus] = useState({
+    isRunning: false,
+    progress: 0
+  });
 
-  // In a real app, this would come from context
-  const currentWorkspaceId = 'ac50873a-91d9-4813-a496-f99a31d926c5';
+  // ← FIX: Get workspace from context (same as Dashboard)
+  const { selectedWorkspace } = useOutletContext();
 
   const loadAssetData = async () => {
+    // ← FIX: Don't load if no workspace selected
+    if (!selectedWorkspace) {
+      console.log('[AssetManagement] No workspace selected, skipping load');
+      setIsLoading(false);
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
+
     try {
-      const { data: assetsData, error: assetsError } = await assetService.getAssets(currentWorkspaceId);
-      if (assetsError) throw new Error(assetsError.message);
+      console.log('[AssetManagement] Loading assets for workspace:', selectedWorkspace);
+
+      const { data: assetsData, error: assetsError } = await assetService.getAssets(selectedWorkspace);
       
-      const formattedAssets = assetsData.map(asset => ({
-        id: asset.id,
-        hostname: asset.hostname,
-        ipAddress: asset.ip_address,
-        operatingSystem: asset.operating_system || 'Unknown',
-        services: asset.open_ports || [],
-        vulnerabilityCount: asset.vulnerabilities?.[0]?.count || 0,
-        highestSeverity: asset.highest_severity || 'None',
-        lastScan: asset.last_scan_at,
-        status: asset.is_active ? 'online' : 'offline'
-      }));
-      
+      if (assetsError) throw new Error(assetsError);
+
+      console.log('[AssetManagement] Raw assets data:', assetsData);
+
+      // ← FIX: Match database schema from scan completion
+      const formattedAssets = assetsData.map(asset => {
+        // Parse services JSON if it's a string
+        let services = [];
+        try {
+          services = typeof asset.services === 'string' 
+            ? JSON.parse(asset.services) 
+            : (asset.services || []);
+        } catch (e) {
+          console.warn('[AssetManagement] Failed to parse services for asset', asset.id, e);
+          services = [];
+        }
+
+        return {
+          id: asset.id,
+          hostname: asset.hostname || 'Unknown',
+          ipAddress: asset.ip_address,
+          operatingSystem: asset.os || 'Unknown', // ← FIX: Use 'os' not 'operating_system'
+          services: services.map(s => `${s.port}/${s.service || 'unknown'}`), // ← FIX: Format services
+          vulnerabilityCount: 0, // ← Will be populated from separate query
+          highestSeverity: 'None',
+          lastScan: asset.discovered_at || asset.created_at, // ← FIX: Use discovered_at
+          status: asset.is_active ? 'online' : 'offline'
+        };
+      });
+
+      console.log('[AssetManagement] Formatted assets:', formattedAssets);
+
       setAssets(formattedAssets);
-      setStats({ 
-          totalAssets: formattedAssets.length, 
-          onlineAssets: formattedAssets.filter(a => a.status === 'online').length,
-          criticalVulns: 0 // Placeholder
+
+      // ← FIX: Calculate stats from formatted data
+      setStats({
+        totalAssets: formattedAssets.length,
+        onlineAssets: formattedAssets.filter(a => a.status === 'online').length,
+        criticalVulns: 0 // ← TODO: Query vulnerabilities separately
       });
 
     } catch (err) {
       setError(err.message);
-      console.error("Failed to load asset data:", err);
+      console.error('[AssetManagement] Failed to load asset data:', err);
     } finally {
       setIsLoading(false);
     }
   };
 
+  // ← FIX: Reload when workspace changes
   useEffect(() => {
     loadAssetData();
-  }, []);
+  }, [selectedWorkspace]);
 
   const tabs = [
     { id: 'assets', label: 'Assets', icon: 'Server', count: assets?.length },
@@ -69,52 +105,132 @@ const AssetManagement = () => {
     { id: 'groups', label: 'Groups', icon: 'Layers', count: assetGroups?.length }
   ];
 
-  if (isLoading) { return <div className="flex items-center justify-center min-h-[50vh]">Loading asset data...</div>; }
-  if (error) { return <div className="flex items-center justify-center min-h-[50vh] text-red-400">Error: {error}</div>; }
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="flex flex-col items-center gap-4">
+          <Icon icon="Loader" className="w-8 h-8 animate-spin text-primary" />
+          <p className="text-text-secondary">Loading assets...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="flex flex-col items-center gap-4 max-w-md text-center">
+          <Icon icon="AlertTriangle" className="w-12 h-12 text-error" />
+          <div>
+            <h3 className="text-lg font-semibold mb-2">Failed to Load Assets</h3>
+            <p className="text-text-secondary mb-4">{error}</p>
+            <Button onClick={loadAssetData}>
+              <Icon icon="RefreshCw" className="w-4 h-4 mr-2" />
+              Retry
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ← FIX: Show message if no workspace selected
+  if (!selectedWorkspace) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="flex flex-col items-center gap-4 max-w-md text-center">
+          <Icon icon="Inbox" className="w-12 h-12 text-text-secondary" />
+          <div>
+            <h3 className="text-lg font-semibold mb-2">No Workspace Selected</h3>
+            <p className="text-text-secondary">
+              Please select a workspace from the dropdown to view assets.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="p-6">
-      <div className="mb-8">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h1 className="text-3xl font-bold text-foreground">Asset Management</h1>
-            <p className="text-muted-foreground">Organize and track network assets for comprehensive vulnerability scanning</p>
-          </div>
-          <div className="flex items-center space-x-3">
-            <Button variant="outline" iconName="RefreshCw" iconPosition="left" onClick={loadAssetData}>Refresh</Button>
-            <Button variant="default" iconName="Plus" iconPosition="left">Add Assets</Button>
-          </div>
+    <div className="space-y-6 p-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Asset Management</h1>
+          <p className="text-text-secondary">
+            Organize and track network assets for comprehensive vulnerability scanning
+          </p>
         </div>
-        <AssetStats stats={stats} />
+        <Button variant="primary" onClick={() => setActiveTab('discovery')}>
+          <Icon icon="Plus" className="w-4 h-4 mr-2" />
+          Discover Assets
+        </Button>
       </div>
 
-      <div className="mb-6">
+      {/* Stats Cards */}
+      <AssetStats stats={stats} />
+
+      {/* Tabs */}
+      <div className="bg-surface rounded-lg border border-border">
         <div className="border-b border-border">
-          <nav className="flex space-x-8">
-            {tabs?.map((tab) => (
-              <button key={tab?.id} onClick={() => setActiveTab(tab?.id)} 
-                className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-medium text-sm transition-colors ${activeTab === tab?.id ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground hover:border-muted'}`}>
-                <Icon name={tab?.icon} size={16} />
-                <span>{tab?.label}</span>
-                {tab?.count != null && (<span className="bg-muted text-muted-foreground text-xs px-2 py-1 rounded-full">{tab.count}</span>)}
+          <div className="flex">
+            {tabs.map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`
+                  px-6 py-3 font-medium flex items-center gap-2
+                  transition-colors border-b-2
+                  ${activeTab === tab.id 
+                    ? 'border-primary text-primary' 
+                    : 'border-transparent text-text-secondary hover:text-text'
+                  }
+                `}
+              >
+                <Icon icon={tab.icon} className="w-4 h-4" />
+                {tab.label}
+                {tab.count !== undefined && (
+                  <span className="ml-2 px-2 py-0.5 text-xs bg-secondary rounded-full">
+                    {tab.count}
+                  </span>
+                )}
               </button>
             ))}
-          </nav>
+          </div>
         </div>
-      </div>
 
-      <div>
-        {activeTab === 'assets' && (
-          <AssetTable
-            assets={assets}
-            onAssetSelect={setSelectedAssets}
-            selectedAssets={selectedAssets}
-            onBulkAction={() => {}}
-          />
-        )}
-        {activeTab === 'discovery' && <AssetDiscovery onDiscoveryStart={() => {}} discoveryStatus={discoveryStatus} />}
-        {activeTab === 'subnets' && <SubnetMap subnets={subnets} onSubnetSelect={() => {}} />}
-        {activeTab === 'groups' && <AssetGroups groups={assetGroups} onGroupCreate={() => {}} />}
+        {/* Tab Content */}
+        <div className="p-6">
+          {activeTab === 'assets' && (
+            <AssetTable
+              assets={assets}
+              selectedAssets={selectedAssets}
+              onAssetSelect={setSelectedAssets}
+              onBulkAction={() => {}}
+            />
+          )}
+
+          {activeTab === 'discovery' && (
+            <AssetDiscovery
+              status={discoveryStatus}
+              onStartDiscovery={() => {}}
+              onStopDiscovery={() => {}}
+            />
+          )}
+
+          {activeTab === 'subnets' && (
+            <SubnetMap subnets={subnets} />
+          )}
+
+          {activeTab === 'groups' && (
+            <AssetGroups
+              groups={assetGroups}
+              onCreateGroup={() => {}}
+              onEditGroup={() => {}}
+              onDeleteGroup={() => {}}
+            />
+          )}
+        </div>
       </div>
     </div>
   );
