@@ -1,3 +1,4 @@
+/* eslint-disable cssUnknownAtRules */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
 @tailwind base;
@@ -54,6 +55,18 @@
     /* Error Colors (Maintain semantic meaning) */
     --color-error: #EF4444; /* red-500 */
     --color-error-foreground: #F8FAFC; /* slate-50 */
+
+    /* Medium Severity Colors */
+    --color-medium: #EAB308; /* yellow-500 for Medium severity vulnerabilities */
+    --color-medium-foreground: #F8FAFC; /* slate-50 */
+
+    /* Low Severity Colors */
+    --color-low: #3B82F6; /* blue-500 for Low severity vulnerabilities */
+    --color-low-foreground: #F8FAFC; /* slate-50 */
+
+    /* Info Colors (Non-severity informational badges) */
+    --color-info: #626C71; /* slate-600 for informational/gray badges */
+    --color-info-foreground: #F8FAFC; /* slate-50 */
 
     /* Surface Colors (Mapped to Darker Card Background) */
     --color-surface: #2A3236; /* Charcoal-800 */
