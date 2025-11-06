@@ -60,6 +60,7 @@ const BulkActionsBar = ({ selectedCount, onBulkScan, onBulkReport, onClearSelect
           
           <div className="flex items-center space-x-3">
             <Select
+              id="selectActionId"
               placeholder="Choose bulk action..."
               options={actionOptions}
               value={selectedAction}

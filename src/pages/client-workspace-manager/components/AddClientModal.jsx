@@ -135,6 +135,7 @@ const AddClientModal = ({ isOpen, onClose, onAddClient }) => {
           {/* Form */}
           <form onSubmit={handleSubmit} className="p-6 space-y-4">
             <Input
+              id="enterClientCompanyNameId"
               label="Client Name"
               type="text"
               placeholder="Enter client company name"
@@ -145,6 +146,7 @@ const AddClientModal = ({ isOpen, onClose, onAddClient }) => {
             />
             
             <Select
+              id="selectIndustryId"
               label="Industry"
               placeholder="Select industry"
               options={industryOptions}
@@ -156,6 +158,7 @@ const AddClientModal = ({ isOpen, onClose, onAddClient }) => {
             />
             
             <Input
+              id="contactEmailId"
               label="Contact Email"
               type="email"
               placeholder="contact@client.com"
@@ -166,6 +169,7 @@ const AddClientModal = ({ isOpen, onClose, onAddClient }) => {
             />
             
             <Input
+              id="contactPhoneId"
               label="Contact Phone"
               type="tel"
               placeholder="+1 (555) 123-4567"

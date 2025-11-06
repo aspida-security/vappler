@@ -74,6 +74,7 @@ const AssetGroups = ({ groups, onGroupCreate, onGroupUpdate, onGroupDelete }) =>
             
             <div className="space-y-4">
               <Input
+                id="groupNameId"
                 label="Group Name"
                 type="text"
                 placeholder="e.g., Web Servers, Database Servers"
@@ -83,6 +84,7 @@ const AssetGroups = ({ groups, onGroupCreate, onGroupUpdate, onGroupDelete }) =>
               />
               
               <Input
+                id="assetDescriptionId"
                 label="Description"
                 type="text"
                 placeholder="Brief description of this asset group"

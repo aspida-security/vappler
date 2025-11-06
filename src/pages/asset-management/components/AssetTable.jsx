@@ -99,6 +99,7 @@ const AssetTable = ({ assets, onAssetSelect, selectedAssets, onBulkAction }) => 
         <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between">
           <div className="flex-1 max-w-md">
             <Input
+              id="searchByHnIpAddrId"
               type="search"
               placeholder="Search by hostname or IP address..."
               value={searchTerm}
@@ -109,6 +110,7 @@ const AssetTable = ({ assets, onAssetSelect, selectedAssets, onBulkAction }) => 
           
           <div className="flex flex-col sm:flex-row gap-3">
             <Select
+              id="selectFilterByOsId"
               options={osOptions}
               value={osFilter}
               onChange={setOsFilter}
@@ -117,6 +119,7 @@ const AssetTable = ({ assets, onAssetSelect, selectedAssets, onBulkAction }) => 
             />
             
             <Select
+              id="selectFilterByStatusId"
               options={statusOptions}
               value={statusFilter}
               onChange={setStatusFilter}

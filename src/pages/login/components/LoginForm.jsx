@@ -75,6 +75,7 @@ const LoginForm = ({ onSubmit, loading = false, error = null }) => {
       )}
       <div className="space-y-4">
         <Input
+          id="enterEmailAddressId"
           label="Email Address"
           type="email"
           placeholder="Enter your email"
@@ -87,6 +88,7 @@ const LoginForm = ({ onSubmit, loading = false, error = null }) => {
 
         <div className="relative">
           <Input
+            id="enterYourPasswordId"
             label="Password"
             type={showPassword ? 'text' : 'password'}
             placeholder="Enter your password"

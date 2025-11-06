@@ -67,6 +67,7 @@ const ResetPassword = () => {
                 <p className="text-red-500 text-sm text-center">{error}</p>
               )}
               <Input
+                id="enterYourNewPasswordId"
                 label="New Password"
                 type="password"
                 placeholder="Enter your new password"
@@ -75,6 +76,7 @@ const ResetPassword = () => {
                 required
               />
               <Input
+                id="confirmYourNewPasswordId"
                 label="Confirm New Password"
                 type="password"
                 placeholder="Confirm your new password"

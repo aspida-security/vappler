@@ -155,6 +155,7 @@ const Select = React.forwardRef(({
 
                 {/* Hidden native select for form submission */}
                 <select
+                    id={selectId}
                     name={name}
                     value={value || ''}
                     onChange={() => { }} // Controlled by our custom logic
@@ -179,6 +180,7 @@ const Select = React.forwardRef(({
                                 <div className="relative">
                                     <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                                     <Input
+                                        id="searchOptionId"
                                         placeholder="Search options..."
                                         value={searchTerm}
                                         onChange={handleSearchChange}

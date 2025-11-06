@@ -183,6 +183,7 @@ const RegistrationForm = ({ onSubmit, loading = false, error = null }) => {
         <h3 className="text-lg font-semibold text-foreground">Company Information</h3>
         
         <Input
+          id="enterCompanyNameId"
           label="Company Name"
           type="text"
           placeholder="Enter your company name"
@@ -197,6 +198,7 @@ const RegistrationForm = ({ onSubmit, loading = false, error = null }) => {
         <h3 className="text-lg font-semibold text-foreground">Personal Information</h3>
         
         <Input
+          id="enterYourFullNameId"
           label="Full Name"
           type="text"
           placeholder="Enter your full name"
@@ -207,6 +209,7 @@ const RegistrationForm = ({ onSubmit, loading = false, error = null }) => {
         />
 
         <Input
+          id="enterYourEmailAddressId"
           label="Email Address"
           type="email"
           placeholder="Enter your email address"
@@ -223,6 +226,7 @@ const RegistrationForm = ({ onSubmit, loading = false, error = null }) => {
         
         <div className="space-y-2">
           <Input
+            id="createStrongPasswordId"
             label="Password"
             type="password"
             placeholder="Create a strong password"
@@ -264,6 +268,7 @@ const RegistrationForm = ({ onSubmit, loading = false, error = null }) => {
         </div>
 
         <Input
+          id="confirmYourPasswordId"
           label="Confirm Password"
           type="password"
           placeholder="Confirm your password"
@@ -278,6 +283,7 @@ const RegistrationForm = ({ onSubmit, loading = false, error = null }) => {
         <h3 className="text-lg font-semibold text-foreground">Professional Information</h3>
         
         <Select
+          id="selectPrimarySpecializationId"
           label="Specialization"
           placeholder="Select your primary specialization"
           options={specializationOptions}
@@ -289,6 +295,7 @@ const RegistrationForm = ({ onSubmit, loading = false, error = null }) => {
         />
 
         <Select
+          id="selectEstimatedClientCountId"
           label="Estimated Client Count"
           placeholder="Select your client count range"
           options={clientCountOptions}
