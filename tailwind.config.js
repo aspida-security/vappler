@@ -18,49 +18,69 @@ export default {
     },
     extend: {
       colors: {
-        border: "var(--color-border)", /* slate-400 with opacity */
-        input: "var(--color-input)", /* slate-800 */
-        // FIX: The focus ring color definition (ring) remains correct, but we introduce charcoal
-        ring: "var(--color-ring)", /* sky-500 */
-        background: "var(--color-background)", /* slate-900 */
-        foreground: "var(--color-foreground)", /* slate-50 */
-        
-        // Custom Charcoal Color definition (Primary Base #4A5557)
-        charcoal: {
-          DEFAULT: '#4A5557', 
-        },
-        
-        primary: {
-          DEFAULT: "var(--color-primary)", /* blue-800 -> Electric Teal */
-          foreground: "var(--color-primary-foreground)", /* slate-50 */
-        },
-        secondary: {
-          DEFAULT: "var(--color-secondary)", /* slate-500 */
-          foreground: "var(--color-secondary-foreground)", /* slate-50 */
-        },
-        destructive: {
-          DEFAULT: "var(--color-destructive)", /* red-500 */
-          foreground: "var(--color-destructive-foreground)", /* slate-50 */
-        },
-        muted: {
-          DEFAULT: "var(--color-muted)", /* slate-700 */
-          foreground: "var(--color-muted-foreground)", /* slate-400 */
-        },
-        accent: {
-          DEFAULT: "var(--color-accent)", /* blue-500 -> Electric Teal */
-          foreground: "var(--color-accent-foreground)", /* slate-900 */
-        },
-        popover: {
-          DEFAULT: "var(--color-popover)", /* slate-900 */
-          foreground: "var(--color-popover-foreground)", /* slate-50 */
-        },
-        card: {
-          DEFAULT: "var(--color-card)", /* slate-900 */
-          foreground: "var(--color-card-foreground)", /* slate-50 */
-        },
-        'text-primary': "var(--color-text-primary)", /* slate-50 */
-        'text-secondary': "var(--color-text-secondary)", /* slate-400 */
-      },
+    border: "var(--color-border)",
+    input: "var(--color-input)",
+    ring: "var(--color-ring)",
+    background: "var(--color-background)",
+    foreground: "var(--color-foreground)",
+    // Custom Charcoal Color definition (Primary Base #4A5557)
+    charcoal: {
+      DEFAULT: '#4A5557',
+    },
+    primary: {
+      DEFAULT: "var(--color-primary)",
+      foreground: "var(--color-primary-foreground)",
+    },
+    secondary: {
+      DEFAULT: "var(--color-secondary)",
+      foreground: "var(--color-secondary-foreground)",
+    },
+    destructive: {
+      DEFAULT: "var(--color-destructive)",
+      foreground: "var(--color-destructive-foreground)",
+    },
+    muted: {
+      DEFAULT: "var(--color-muted)",
+      foreground: "var(--color-muted-foreground)",
+    },
+    accent: {
+      DEFAULT: "var(--color-accent)",
+      foreground: "var(--color-accent-foreground)",
+    },
+    popover: {
+      DEFAULT: "var(--color-popover)",
+      foreground: "var(--color-popover-foreground)",
+    },
+    card: {
+      DEFAULT: "var(--color-card)",
+      foreground: "var(--color-card-foreground)",
+    },
+    // Semantic Status Colors (mapped from CSS variables)
+    warning: {
+      DEFAULT: "var(--color-warning)",    // ⬅️ Amber mapped to --color-warning
+      foreground: "var(--color-foreground)",
+    },
+    error: {
+      DEFAULT: "var(--color-error)",      // ⬅️ Red mapped to --color-error
+      foreground: "var(--color-foreground)",
+    },
+    medium: {
+      DEFAULT: "var(--color-medium)",     // ⬅️ Yellow mapped to --color-medium
+      foreground: "var(--color-foreground)",
+    },
+    low: {
+      DEFAULT: "var(--color-low)",        // ⬅️ Blue mapped to --color-low
+      foreground: "var(--color-foreground)",
+    },
+    info: {
+      DEFAULT: "var(--color-info)",       // ⬅️ Gray mapped to --color-info
+      foreground: "var(--color-foreground)",
+    },
+    success: {
+      DEFAULT: "var(--color-success)",    // ⬅️ Green mapped to --color-success
+      foreground: "var(--color-foreground)",
+    },
+  },
       borderRadius: {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
