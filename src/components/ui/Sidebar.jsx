@@ -110,6 +110,7 @@ const Sidebar = ({
         <div className="flex-1 flex flex-col overflow-y-auto">
           <div className="p-6 border-b border-border">
             <Select
+              id="selectActiveWorkspaceId"
               label="Active Workspace"
               options={workspaceOptions}
               value={selectedWorkspace}

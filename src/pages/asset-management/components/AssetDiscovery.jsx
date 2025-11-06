@@ -108,6 +108,7 @@ const AssetDiscovery = ({ onDiscoveryStart, discoveryStatus }) => {
         {/* Discovery Configuration */}
         <div className="space-y-4">
           <Select
+            id="selectDiscoveryTypeId"
             label="Discovery Type"
             options={discoveryTypeOptions}
             value={discoveryType}
@@ -116,6 +117,7 @@ const AssetDiscovery = ({ onDiscoveryStart, discoveryStatus }) => {
           />
 
           <Input
+            id="targetSearchInputId"
             label="Target"
             type={discoveryType === 'import' ? 'file' : 'text'}
             placeholder={getPlaceholder()}
@@ -129,6 +131,7 @@ const AssetDiscovery = ({ onDiscoveryStart, discoveryStatus }) => {
 
           {discoveryType !== 'import' && (
             <Select
+              id="selectPortScanningId"
               label="Port Scanning"
               options={portRangeOptions}
               value={portRange}

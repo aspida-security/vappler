@@ -26,6 +26,7 @@ const WorkspaceSelector = ({ workspaces, selectedWorkspace, onWorkspaceChange, s
       </div>
       <div className="space-y-4">
         <Select
+          id="selectWorkspaceOptionsId"
           options={workspaceOptions}
           value={selectedWorkspace}
           onChange={onWorkspaceChange}
