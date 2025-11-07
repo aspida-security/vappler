@@ -18,14 +18,14 @@ const WorkspaceTable = ({
   const getRiskScoreColor = (score) => {
     if (score >= 80) return 'text-destructive';
     if (score >= 60) return 'text-warning';
-    if (score >= 40) return 'text-accent';
+    if (score >= 40) return 'text-medium';
     return 'text-success';
   };
 
   const getRiskScoreBg = (score) => {
     if (score >= 80) return 'bg-destructive/10';
     if (score >= 60) return 'bg-warning/10';
-    if (score >= 40) return 'bg-accent/10';
+    if (score >= 40) return 'bg-medium/10';
     return 'bg-success/10';
   };
 
@@ -156,7 +156,7 @@ const WorkspaceTable = ({
                       </span>
                     </div>
                     <div className="flex items-center space-x-1">
-                      <div className="w-2 h-2 bg-accent rounded-full"></div>
+                      <div className="w-2 h-2 bg-medium rounded-full"></div>
                       <span className="text-xs text-muted-foreground">
                         {workspace?.mediumVulns}
                       </span>
