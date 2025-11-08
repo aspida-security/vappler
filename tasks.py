@@ -1,188 +1,130 @@
-"""
-Celery Tasks for Vappler Security Scanner
-Handles asynchronous vulnerability scanning and attack path analysis
-"""
-
-import requests
-import os
+#!/usr/bin/env python3
+import os, requests, traceback, json
+from datetime import datetime, timedelta
 from celery import Celery
+from celery.exceptions import SoftTimeLimitExceeded
 from scanner.mapper import NetworkMapper
 
-# Initialize Celery with Redis broker and backend
-celery_app = Celery(
-    'tasks',
-    broker='redis://vappler-redis:6379/0',
-    backend='redis://vappler-redis:6379/0'
-)
+celery_app = Celery('vappler', broker='redis://vappler-redis:6379/0', backend='redis://vappler-redis:6379/0')
+celery_app.conf.update(task_serializer='json', accept_content=['json'], result_serializer='json', timezone='UTC', enable_utc=True, task_track_started=True, task_time_limit=30*60, task_soft_time_limit=25*60, worker_prefetch_multiplier=1, task_acks_late=True)
 
-# Configure Celery
-celery_app.conf.update(
-    task_serializer='json',
-    accept_content=['json'],
-    result_serializer='json',
-    timezone='UTC',
-    enable_utc=True,
-)
-
-# ← NEW: Supabase configuration
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY")
 
-# ← NEW: Helper function to update scan status via PostgREST
-def update_scan_status(scan_id, status, error_message=None):
-    """Update scan record status in Supabase via PostgREST"""
+def update_scan_status(scan_id: str, status: str, error_msg: str = None, result: dict = None):
     if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
-        print(f"[WARN] Cannot update scan status: Missing Supabase config")
-        return
-    
-    url = f"{SUPABASE_URL}/rest/v1/scans"
-    headers = {
-        "apikey": SUPABASE_SERVICE_KEY,
-        "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
-        "Content-Type": "application/json",
-        "Prefer": "return=minimal"
-    }
-    
-    # Build update payload
-    payload = {"status": status}
-    
-    if status in ["completed", "failed"]:
-        # Use PostgreSQL's now() function for server-side timestamp
-        payload["completed_at"] = "now()"
-    
-    if status == "failed" and error_message:
-        payload["error_message"] = error_message
-    
+        return False
     try:
-        response = requests.patch(
-            f"{url}?id=eq.{scan_id}",
-            headers=headers,
-            json=payload
-        )
-        if response.status_code in [200, 204]:
-            print(f"[*] Updated scan {scan_id} status to '{status}'")
-        else:
-            print(f"[WARN] Failed to update scan status: {response.status_code} - {response.text}")
+        headers = {"Authorization": f"Bearer {SUPABASE_SERVICE_KEY}"}
+        update_data = {"status": status, "updated_at": datetime.utcnow().isoformat()}
+        if status == "completed":
+            update_data["completed_at"] = datetime.utcnow().isoformat()
+        elif status == "running":
+            update_data["started_at"] = datetime.utcnow().isoformat()
+        if error_msg:
+            update_data["error_message"] = error_msg
+        if result:
+            update_data["result_summary"] = json.dumps(result)
+            update_data["vulnerabilities_found"] = result.get("total", 0)
+        resp = requests.patch(f"{SUPABASE_URL}/rest/v1/scans?id=eq.{scan_id}", json=update_data, headers=headers, timeout=10)
+        return resp.status_code == 204
     except Exception as e:
-        print(f"[ERROR] Exception updating scan status: {str(e)}")
+        print(f"[ERROR] update_scan_status: {str(e)}")
+        return False
 
-
-@celery_app.task(name='tasks.run_nmap_scan')
-def run_nmap_scan(scan_id, target, scan_type='quick'):
-    """
-    Run nmap vulnerability scan for a given target.
-    
-    This task performs:
-    1. Host discovery using nmap
-    2. Service and version detection
-    3. Vulnerability scanning using NSE scripts
-    4. Attack path analysis to crown jewel asset
-    
-    Args:
-        scan_id (str): The UUID of the scan record in Supabase
-        target (str): Target IP address, hostname, or CIDR range
-        scan_type (str): Type of scan to perform. Options:
-            - 'quick': Fast scan of common ports
-            - 'full': Comprehensive scan of all ports
-            Currently defaults to full scan regardless of value
-    
-    Returns:
-        dict: Scan results containing:
-            - scan_id: UUID of the scan
-            - hosts: List of discovered hosts with services
-            - vulnerabilities: List of detected vulnerabilities
-            - attack_paths: Calculated attack paths to crown jewel
-            - metadata: Scan timing and statistics
-    
-    Raises:
-        Exception: Any scanning errors are caught and returned in result dict
-    """
-    print(f"[*] ========================================")
-    print(f"[*] Celery worker starting Nmap scan")
-    print(f"[*] Scan ID: {scan_id}")
-    print(f"[*] Target: {target}")
-    print(f"[*] Scan Type: {scan_type}")
-    print(f"[*] ========================================")
-    
-    # ← NEW: Update scan status to "scanning"
-    update_scan_status(scan_id, "scanning")
-    
+def save_vulnerabilities(scan_id: str, ws_id: str, vulns: list):
+    if not vulns:
+        return 0
     try:
-        # Step 1: Initialize the NetworkMapper with target
-        print(f"[*] Step 1: Initializing NetworkMapper for target: {target}")
-        mapper = NetworkMapper(target_range=target)
-        
-        # Step 2: Discover hosts on the network
-        print(f"[*] Step 2: Starting host discovery...")
+        headers = {"Authorization": f"Bearer {SUPABASE_SERVICE_KEY}"}
+        records = []
+        for v in vulns:
+            records.append({"scan_id": scan_id, "workspace_id": ws_id, "cve_id": v.get("cve_id"), "title": v.get("title"), "description": v.get("description"), "severity": v.get("severity"), "cvss_score": v.get("cvss_score"), "affected_asset": v.get("affected_asset"), "port": v.get("port"), "service": v.get("service"), "remediation": v.get("remediation"), "kev_tracked": v.get("kev_tracked", False), "discovered_at": datetime.utcnow().isoformat(), "status": "open"})
+        resp = requests.post(f"{SUPABASE_URL}/rest/v1/vulnerabilities", json=records, headers=headers, timeout=10)
+        if resp.status_code == 201:
+            print(f"[+] Saved {len(records)} vulnerabilities")
+            return len(records)
+        return 0
+    except Exception as e:
+        print(f"[ERROR] save_vulnerabilities: {str(e)}")
+        return 0
+
+def save_assets(scan_id: str, ws_id: str, assets: list):
+    if not assets:
+        return 0
+    try:
+        headers = {"Authorization": f"Bearer {SUPABASE_SERVICE_KEY}"}
+        records = []
+        for a in assets:
+            records.append({"workspace_id": ws_id, "ip_address": a.get("ip_address"), "hostname": a.get("hostname"), "status": "active", "operating_system": a.get("operating_system"), "highest_severity": a.get("highest_severity"), "last_scan": datetime.utcnow().isoformat(), "created_at": datetime.utcnow().isoformat()})
+        resp = requests.post(f"{SUPABASE_URL}/rest/v1/assets", json=records, headers=headers, timeout=10)
+        if resp.status_code == 201:
+            print(f"[+] Saved {len(records)} assets")
+            return len(records)
+        return 0
+    except Exception as e:
+        print(f"[ERROR] save_assets: {str(e)}")
+        return 0
+
+@celery_app.task(bind=True, max_retries=3, default_retry_delay=60)
+def run_nmap_scan(self, target: str, scan_id: str, ws_id: str):
+    try:
+        print(f"[*] Starting scan {scan_id} for {target}")
+        update_scan_status(scan_id, "running")
+        mapper = NetworkMapper(target)
         mapper.discover_hosts()
-        print(f"[*] Host discovery complete. Found {len(mapper.hosts_list)} host(s)")
-        
-        # Step 3: Scan for vulnerabilities
-        print(f"[*] Step 3: Starting vulnerability scan...")
-        mapper.find_vulnerabilities()
-        print(f"[*] Vulnerability scan complete")
-        
-        # Step 4: Generate attack path analysis
-        print(f"[*] Step 4: Generating attack path analysis...")
-        print(f"[*] Crown jewel asset: {target}")
-        report = mapper.find_attack_path_for_api(crown_jewel=target)
-        
-        # Step 5: Inject scan_id into the report
-        report['scan_id'] = scan_id
-        
-        # Log report summary
-        print(f"[*] ========================================")
-        print(f"[*] Scan completed successfully!")
-        print(f"[*] Report contains keys: {list(report.keys())}")
-        
-        if 'vulnerability_details' in report:
-            host_count = len(report.get('vulnerability_details', []))
-            print(f"[*] Total hosts in report: {host_count}")
-            total_vulns = sum(len(host.get('vulnerabilities', [])) for host in report.get('vulnerability_details', []))
-            print(f"[*] Total vulnerabilities: {total_vulns}")
-        
-        print(f"[*] ========================================")
-        
-        # ← NEW: Update scan to completed status
-        # Note: We don't create assets here - the /scan/<scan_id>/complete endpoint does that
-        update_scan_status(scan_id, "completed")
-        
-        return report
-        
+        mapper.scan_services()
+        mapper.check_vulnerabilities()
+        vulns = mapper.get_vulnerabilities()
+        assets = mapper.get_hosts()
+        risk_score = mapper.calculate_risk_score()
+        print(f"[+] Found {len(vulns)} vulnerabilities, {len(assets)} assets")
+        vuln_count = save_vulnerabilities(scan_id, ws_id, vulns)
+        asset_count = save_assets(scan_id, ws_id, assets)
+        result_summary = {"total": len(vulns), "critical": len([v for v in vulns if v.get("severity") == "Critical"]), "high": len([v for v in vulns if v.get("severity") == "High"]), "medium": len([v for v in vulns if v.get("severity") == "Medium"]), "low": len([v for v in vulns if v.get("severity") == "Low"]), "risk_score": risk_score, "assets_found": len(assets)}
+        update_scan_status(scan_id, "completed", result=result_summary)
+        print(f"[✓] Scan {scan_id} completed successfully")
+        return {"scan_id": scan_id, "status": "completed", "vulnerabilities": vuln_count, "assets": asset_count, "summary": result_summary}
+    except SoftTimeLimitExceeded:
+        print(f"[!] Scan {scan_id} timeout")
+        update_scan_status(scan_id, "timeout", error_msg="Scan exceeded 25 minute limit")
+        raise
     except Exception as e:
-        # Catch any errors and return them in a structured format
-        error_msg = f"Scan failed for {target}: {str(e)}"
-        print(f"[!!!] ========================================")
-        print(f"[!!!] ERROR in run_nmap_scan")
-        print(f"[!!!] Target: {target}")
-        print(f"[!!!] Scan ID: {scan_id}")
-        print(f"[!!!] Error: {str(e)}")
-        print(f"[!!!] ========================================")
-        
-        # Print full traceback for debugging
-        import traceback
-        traceback.print_exc()
-        
-        # ← NEW: Update scan to failed status
-        update_scan_status(scan_id, "failed", error_message=str(e))
-        
-        # Return error in consistent format
-        return {
-            "scan_id": scan_id,
-            "error": str(e),
-            "message": error_msg,
-            "vulnerability_details": [],
-            "path": []
-        }
+        error_str = str(e)
+        print(f"[ERROR] Scan {scan_id} failed: {error_str}")
+        print(traceback.format_exc())
+        if self.request.retries < self.max_retries:
+            print(f"[*] Retry {self.request.retries + 1}/{self.max_retries}")
+            raise self.retry(exc=e, countdown=120)
+        else:
+            update_scan_status(scan_id, "failed", error_msg=error_str)
+            print(f"[✗] Scan {scan_id} failed permanently")
+            raise
 
+@celery_app.task(bind=True)
+def generate_report(self, scan_id: str, ws_id: str):
+    try:
+        print(f"[*] Generating report for scan {scan_id}")
+        headers = {"Authorization": f"Bearer {SUPABASE_SERVICE_KEY}"}
+        scan_resp = requests.get(f"{SUPABASE_URL}/rest/v1/scans?id=eq.{scan_id}", headers=headers, timeout=10)
+        scan = scan_resp.json()[0] if scan_resp.json() else {}
+        vuln_resp = requests.get(f"{SUPABASE_URL}/rest/v1/vulnerabilities?scan_id=eq.{scan_id}", headers=headers, timeout=10)
+        vulns = vuln_resp.json() or []
+        report = {"scan_id": scan_id, "generated_at": datetime.utcnow().isoformat(), "target": scan.get("target"), "total_vulnerabilities": len(vulns), "by_severity": {"critical": len([v for v in vulns if v.get("severity") == "Critical"]), "high": len([v for v in vulns if v.get("severity") == "High"]), "medium": len([v for v in vulns if v.get("severity") == "Medium"]), "low": len([v for v in vulns if v.get("severity") == "Low"])}, "vulnerabilities": vulns}
+        print(f"[✓] Report generated for {scan_id}")
+        return report
+    except Exception as e:
+        print(f"[ERROR] Report generation: {str(e)}")
+        raise
 
-# Keep this for backwards compatibility if needed
-@celery_app.task(name='tasks.run_local_nmap_task')
-def run_local_nmap_task(target, crown_jewel_asset, scan_id):
-    """
-    DEPRECATED: Legacy task name for backwards compatibility.
-    Use run_nmap_scan instead.
-    """
-    print(f"[WARN] run_local_nmap_task is DEPRECATED. Use run_nmap_scan instead.")
-    print(f"[WARN] Redirecting to run_nmap_scan...")
-    return run_nmap_scan(scan_id=scan_id, target=target, scan_type='quick')
+@celery_app.task
+def cleanup_old_scans():
+    try:
+        cutoff_date = (datetime.utcnow() - timedelta(days=90)).isoformat()
+        headers = {"Authorization": f"Bearer {SUPABASE_SERVICE_KEY}"}
+        resp = requests.delete(f"{SUPABASE_URL}/rest/v1/scans?created_at=lt.{cutoff_date}", headers=headers, timeout=10)
+        print(f"[✓] Cleanup completed: {resp.status_code}")
+        return {"status": "ok"}
+    except Exception as e:
+        print(f"[ERROR] Cleanup task: {str(e)}")
+        raise
