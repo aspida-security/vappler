@@ -23,13 +23,16 @@ services:
       - vappler-net
     environment:
       # Supabase connection (uses host.docker.internal to reach host machine)
-      - SUPABASE_URL=http://host.docker.internal:54321
+      - SUPABASE_URL=http://host.docker.internal:63321
+      - VITE_SUPABASE_URL=http://host.docker.internal:63321
       - SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY}
-      - SUPABASE_SERVICE_KEY=${VITE_SUPABASE_SERVICE_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${VITE_SUPABASE_SERVICE_KEY}
       # Redis connection
       - REDIS_URL=redis://vappler-redis:6379/0
       # CORS for frontend
       - CORS_ORIGINS=http://localhost:4028,http://localhost:5173
+      # Flask environment - ADDED
+      - FLASK_ENV=development
 
   worker:
     build: .
@@ -44,12 +47,13 @@ services:
     networks:
       - vappler-net
     environment:
-      # Worker needs Supabase access to write scan results
-      - SUPABASE_URL=http://host.docker.internal:54321
-      - SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY}
-      - SUPABASE_SERVICE_KEY=${VITE_SUPABASE_SERVICE_KEY}
-      # Redis connection
-      - REDIS_URL=redis://vappler-redis:6379/0
+    # Worker needs Supabase access - FIXED PORT
+    - SUPABASE_URL=http://host.docker.internal:63321
+    - VITE_SUPABASE_URL=http://host.docker.internal:63321
+    - SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY}
+    - SUPABASE_SERVICE_KEY=${VITE_SUPABASE_SERVICE_KEY}
+    # Redis connection
+    - REDIS_URL=redis://vappler-redis:6379/0
 
   test-target:
     image: "httpd:alpine"
