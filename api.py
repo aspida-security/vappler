@@ -1,6 +1,8 @@
-# FILE: backend/api/api.py
-
-import os
+#!/usr/bin/env python3
+import os, json, traceback, jwt
+from datetime import datetime
+from functools import wraps
+from typing import Dict, Optional
 import requests
 import traceback
 from flask import Flask, request, jsonify
@@ -8,11 +10,18 @@ from flask_cors import CORS
 from tasks import run_nmap_scan, celery_app
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={
+    r"/api/*": {
+        "origins": ["http://localhost:3000", "http://localhost:5173"],
+        "methods": ["GET", "POST", "PUT", "DELETE", "PATCH"],
+        "allow_headers": ["Content-Type", "Authorization"],
+        "supports_credentials": True
+    }
+})
 
-# Load Supabase connection details
-SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY")
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
+SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
+SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "")
 
 if not SUPABASE_URL or not SUPABASE_ANON_KEY:
     print("[!!!] ERROR: Missing SUPABASE_URL or SUPABASE_ANON_KEY environment variables.")
@@ -23,8 +32,6 @@ else:
 def start_scan():
     """Initiate a new vulnerability scan"""
     try:
-        # 1. Get user JWT from Authorization header
-        auth_header = request.headers.get("Authorization", "")
         if not auth_header.startswith("Bearer "):
             print("[!!!] /scan error: Missing or invalid Authorization header.")
             return jsonify({"error": "Missing or invalid Authorization header"}), 401
@@ -88,9 +95,8 @@ def start_scan():
             return jsonify({"error": "Database insert failed", "detail": error_detail}), 500
     
     except Exception as e:
-        print(f"[!!!] Unhandled exception in /scan endpoint: {e}")
-        traceback.print_exc()
-        return jsonify({"error": f"Internal server error: {e}"}), 500
+        print(f"[JWT] {str(e)}")
+        return None
 
 @app.route('/scan/<scan_id>/complete', methods=['POST'])
 def complete_scan(scan_id):
@@ -216,9 +222,8 @@ def complete_scan(scan_id):
         }), 200
     
     except Exception as e:
-        print(f"[!!!] Error in /scan/{scan_id}/complete: {e}")
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+        print(f"[ASSETS] {traceback.format_exc()}")
+        return {"error": str(e)}, 500
 
 @app.route('/results/<task_id>', methods=['GET'])
 def get_results(task_id):
@@ -241,8 +246,12 @@ def get_results(task_id):
         return jsonify(response)
     
     except Exception as e:
-        print(f"[!!!] Error in /results/{task_id}: {e}")
-        return jsonify({"error": str(e)}), 500
+        print(f"[WORKSPACES] {traceback.format_exc()}")
+        return {"error": str(e)}, 500
+
+@app.errorhandler(404)
+def not_found(e):
+    return jsonify({"error": "Not found"}), 404
 
 if __name__ == '__main__':
     print("Starting Flask development server...")

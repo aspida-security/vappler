@@ -6,6 +6,7 @@ Handles asynchronous vulnerability scanning and attack path analysis
 
 import requests, os, traceback
 from celery import Celery
+from celery.exceptions import SoftTimeLimitExceeded
 from scanner.mapper import NetworkMapper
 
 # Initialize Celery with Redis broker and backend
