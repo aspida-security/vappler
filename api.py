@@ -3,8 +3,6 @@
 import os
 import requests
 import traceback
-import base64
-import json
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from tasks import run_nmap_scan, celery_app
@@ -21,7 +19,6 @@ if not SUPABASE_URL or not SUPABASE_ANON_KEY:
 else:
     print(f"[*] API configured with SUPABASE_URL: {SUPABASE_URL}")
 
-
 @app.route('/scan', methods=['POST'])
 def start_scan():
     """Initiate a new vulnerability scan"""
@@ -34,20 +31,20 @@ def start_scan():
         
         user_jwt = auth_header.split(" ", 1)[1]
         print(f"[*] /scan: Received Authorization header")
-
+        
         # 2. Get payload from request
         payload = request.get_json()
         target = payload.get('target')
         scan_type = payload.get('scan_type', 'quick')
         workspace_id = payload.get("workspace_id")
-
+        
         if not target:
             return jsonify({"error": "'target' is required."}), 400
         
         if not workspace_id:
             print("[!!!] /scan error: workspace_id missing from request payload.")
             return jsonify({"error": "workspace_id is required"}), 400
-
+        
         # 3. Create scan record in Supabase
         postgrest_url = f"{SUPABASE_URL}/rest/v1/scans"
         headers = {
@@ -56,7 +53,7 @@ def start_scan():
             "Content-Type": "application/json",
             "Prefer": "return=representation"
         }
-
+        
         new_scan_data = {
             "workspace_id": workspace_id,
             "name": f"Scan for {target}",
@@ -64,45 +61,40 @@ def start_scan():
             "status": 'running',
             "target_count": 1
         }
-
+        
         print(f"[*] /scan: Creating scan record in Supabase")
         response = requests.post(postgrest_url, json=new_scan_data, headers=headers)
-
+        
         if response.status_code == 201:
             created_scan = response.json()[0]
             scan_id = created_scan['id']
             print(f"[*] /scan: Scan record created. Scan ID: {scan_id}")
-
+            
             # 4. Queue Celery task with correct parameters
             print(f"[*] /scan: Queuing Celery task...")
-            task = run_nmap_scan.delay(scan_id, target, scan_type)
+            task = run_nmap_scan.delay(scan_id, target, workspace_id, scan_type)
             print(f"[*] /scan: Celery task '{task.id}' queued for scan '{scan_id}'")
-
+            
             # 5. Return BOTH scan_id and task_id to frontend
             return jsonify({
                 "scan_id": scan_id,
                 "task_id": task.id
             }), 202
-
         else:
             error_detail = response.text
             print(f"[!!!] /scan error: PostgREST INSERT failed.")
-            print(f"    Status Code: {response.status_code}")
-            print(f"    Response: {error_detail}")
+            print(f"     Status Code: {response.status_code}")
+            print(f"     Response: {error_detail}")
             return jsonify({"error": "Database insert failed", "detail": error_detail}), 500
-
+    
     except Exception as e:
         print(f"[!!!] Unhandled exception in /scan endpoint: {e}")
         traceback.print_exc()
         return jsonify({"error": f"Internal server error: {e}"}), 500
 
-
 @app.route('/scan/<scan_id>/complete', methods=['POST'])
 def complete_scan(scan_id):
-    """
-    Process completed scan results and save to Supabase.
-    Called by frontend when task status is SUCCESS.
-    """
+    """Process completed scan results and save to Supabase"""
     try:
         # 1. Get user JWT
         auth_header = request.headers.get("Authorization", "")
@@ -110,27 +102,27 @@ def complete_scan(scan_id):
             return jsonify({"error": "Missing Authorization header"}), 401
         
         user_jwt = auth_header.split(" ", 1)[1]
-
+        
         # 2. Get task_id from request
         payload = request.get_json()
         task_id = payload.get('task_id')
         
         if not task_id:
             return jsonify({"error": "task_id is required"}), 400
-
+        
         print(f"[*] /scan/{scan_id}/complete: Processing completion for task {task_id}")
-
+        
         # 3. Retrieve task result from Celery
         task = celery_app.AsyncResult(task_id)
         
         if task.state != 'SUCCESS':
             print(f"[!!!] Task {task_id} is not in SUCCESS state: {task.state}")
             return jsonify({"error": f"Task not complete. Current state: {task.state}"}), 400
-
+        
         # 4. Get the scan results
         scan_results = task.result
         print(f"[*] Retrieved scan results. Keys: {list(scan_results.keys())}")
-
+        
         # 5. Prepare headers for Supabase requests
         headers = {
             "Authorization": f"Bearer {user_jwt}",
@@ -138,7 +130,7 @@ def complete_scan(scan_id):
             "Content-Type": "application/json",
             "Prefer": "return=representation"
         }
-
+        
         # 6. Get workspace_id from scan record
         scan_url = f"{SUPABASE_URL}/rest/v1/scans?id=eq.{scan_id}&select=workspace_id"
         scan_response = requests.get(scan_url, headers=headers)
@@ -149,14 +141,14 @@ def complete_scan(scan_id):
         
         workspace_id = scan_response.json()[0]['workspace_id']
         print(f"[*] Found workspace_id: {workspace_id}")
-
+        
         # 7. Save assets to Supabase
         vulnerability_details = scan_results.get('vulnerability_details', [])
         print(f"[*] Processing {len(vulnerability_details)} hosts...")
         
         assets_saved = 0
         vulns_saved = 0
-
+        
         for host_data in vulnerability_details:
             host_ip = host_data.get('ip_address')
             hostname = host_data.get('host', host_ip)
@@ -177,10 +169,9 @@ def complete_scan(scan_id):
                 assets_saved += 1
                 asset_id = asset_response.json()[0]['id']
                 print(f"[*] Created asset: {hostname} ({host_ip}) - ID: {asset_id}")
-
+                
                 # Save vulnerabilities for this asset
                 vulnerabilities = host_data.get('vulnerabilities', [])
-                
                 for vuln in vulnerabilities:
                     vuln_data = {
                         "workspace_id": workspace_id,
@@ -202,7 +193,7 @@ def complete_scan(scan_id):
                         vulns_saved += 1
             else:
                 print(f"[!!!] Failed to create asset {hostname}: {asset_response.text}")
-
+        
         # 8. Update scan status to 'completed'
         update_url = f"{SUPABASE_URL}/rest/v1/scans?id=eq.{scan_id}"
         update_data = {
@@ -216,19 +207,18 @@ def complete_scan(scan_id):
             print(f"[*] Scan {scan_id} marked as completed")
         else:
             print(f"[!!!] Failed to update scan status: {update_response.text}")
-
+        
         # 9. Return success
         return jsonify({
             "message": "Scan results processed successfully",
             "assets_saved": assets_saved,
             "vulnerabilities_saved": vulns_saved
         }), 200
-
+    
     except Exception as e:
         print(f"[!!!] Error in /scan/{scan_id}/complete: {e}")
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
-
 
 @app.route('/results/<task_id>', methods=['GET'])
 def get_results(task_id):
@@ -236,7 +226,7 @@ def get_results(task_id):
     try:
         task = celery_app.AsyncResult(task_id)
         print(f"[*] /results/{task_id}: Task state: {task.state}")
-
+        
         if task.state == 'PENDING':
             response = {'state': task.state, 'status': 'Pending...'}
         elif task.state == 'SUCCESS':
@@ -247,13 +237,12 @@ def get_results(task_id):
             response = {'state': task.state, 'status': status_info}
         else:
             response = {'state': task.state, 'status': f'In progress ({task.state})...'}
-
+        
         return jsonify(response)
-
+    
     except Exception as e:
         print(f"[!!!] Error in /results/{task_id}: {e}")
         return jsonify({"error": str(e)}), 500
-
 
 if __name__ == '__main__':
     print("Starting Flask development server...")
