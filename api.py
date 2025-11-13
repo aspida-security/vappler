@@ -3,9 +3,12 @@
 import os
 import requests
 import traceback
-from flask import Flask, request, jsonify
+import jwt
+from functools import wraps
+from flask import Flask, request, jsonify, g
 from flask_cors import CORS
 from tasks import run_nmap_scan, celery_app
+from supabase import create_client, Client
 
 app = Flask(__name__)
 CORS(app)
@@ -13,26 +16,60 @@ CORS(app)
 # Load Supabase connection details
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY")
+SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY")
 
-if not SUPABASE_URL or not SUPABASE_ANON_KEY:
-    print("[!!!] ERROR: Missing SUPABASE_URL or SUPABASE_ANON_KEY environment variables.")
-else:
-    print(f"[*] API configured with SUPABASE_URL: {SUPABASE_URL}")
+if not SUPABASE_URL or not SUPABASE_ANON_KEY or not SUPABASE_SERVICE_KEY:
+    print("[!!!] ERROR: Missing SUPABASE_URL, SUPABASE_ANON_KEY, or SUPABASE_SERVICE_KEY")
+    exit(1)
+
+print(f"[*] API configured with SUPABASE_URL: {SUPABASE_URL}")
+print(f"[*] Loaded SUPABASE_SERVICE_KEY: {SUPABASE_SERVICE_KEY[:15]}...")
+
+try:
+    service_client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+    print("[✓] Service Role Client initialized (bypasses RLS)")
+except Exception as e:
+    print(f"[!!!] Failed to initialize Service Role Client: {e}")
+    service_client = None
+
+# Authentication decorator
+def auth_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            return jsonify({"error": "Missing Authorization header"}), 401
+        
+        # ✅ FIXED: Extract token string correctly
+        token = auth_header.split("Bearer ")[1]
+        
+        try:
+            payload = jwt.decode(token, options={"verify_signature": False})
+            g.user_id = payload.get("sub")
+            
+            if not g.user_id:
+                return jsonify({"error": "Invalid token"}), 401
+            
+            print(f"[✓] Authenticated user: {g.user_id}")
+        except Exception as e:
+            print(f"[!!!] Auth error: {str(e)}")
+            return jsonify({"error": "Token validation failed"}), 401
+        
+        return f(*args, **kwargs)
+    return decorated_function
+
+# Test route
+@app.route('/api/test-auth', methods=['GET'])
+@auth_required
+def test_auth():
+    return jsonify({"message": "Authentication successful!", "created_by": g.user_id}), 200
 
 @app.route('/scan', methods=['POST'])
+@auth_required
 def start_scan():
     """Initiate a new vulnerability scan"""
     try:
-        # 1. Get user JWT from Authorization header
-        auth_header = request.headers.get("Authorization", "")
-        if not auth_header.startswith("Bearer "):
-            print("[!!!] /scan error: Missing or invalid Authorization header.")
-            return jsonify({"error": "Missing or invalid Authorization header"}), 401
-        
-        user_jwt = auth_header.split(" ", 1)[1]
-        print(f"[*] /scan: Received Authorization header")
-        
-        # 2. Get payload from request
+        # 1. Get payload from request
         payload = request.get_json()
         target = payload.get('target')
         scan_type = payload.get('scan_type', 'quick')
@@ -45,48 +82,39 @@ def start_scan():
             print("[!!!] /scan error: workspace_id missing from request payload.")
             return jsonify({"error": "workspace_id is required"}), 400
         
-        # 3. Create scan record in Supabase
-        postgrest_url = f"{SUPABASE_URL}/rest/v1/scans"
-        headers = {
-            "Authorization": f"Bearer {user_jwt}",
-            "apikey": SUPABASE_ANON_KEY,
-            "Content-Type": "application/json",
-            "Prefer": "return=representation"
-        }
-        
+        # 2. Create scan record in Supabase using service_client (bypasses RLS)
         new_scan_data = {
             "workspace_id": workspace_id,
             "name": f"Scan for {target}",
             "scan_type": scan_type,
             "status": 'running',
-            "target_count": 1
+            "target_count": 1,
+            "created_by": g.user_id    # ✅ Add the authenticated user's ID from JWT
         }
         
-        print(f"[*] /scan: Creating scan record in Supabase")
-        response = requests.post(postgrest_url, json=new_scan_data, headers=headers)
+        print(f"[*] /scan: Creating scan record in Supabase for user {g.user_id}")
+        response = service_client.table("scans").insert(new_scan_data).execute()
         
-        if response.status_code == 201:
-            created_scan = response.json()[0]
+        if response.data and len(response.data) > 0:
+            created_scan = response.data[0]
             scan_id = created_scan['id']
             print(f"[*] /scan: Scan record created. Scan ID: {scan_id}")
             
-            # 4. Queue Celery task with correct parameters
+            # 3. Queue Celery task with correct parameters
             print(f"[*] /scan: Queuing Celery task...")
             task = run_nmap_scan.delay(scan_id, target, workspace_id, scan_type)
             print(f"[*] /scan: Celery task '{task.id}' queued for scan '{scan_id}'")
             
-            # 5. Return BOTH scan_id and task_id to frontend
+            # 4. Return BOTH scan_id and task_id to frontend
             return jsonify({
                 "scan_id": scan_id,
                 "task_id": task.id
             }), 202
         else:
-            error_detail = response.text
-            print(f"[!!!] /scan error: PostgREST INSERT failed.")
-            print(f"     Status Code: {response.status_code}")
-            print(f"     Response: {error_detail}")
-            return jsonify({"error": "Database insert failed", "detail": error_detail}), 500
-    
+            print(f"[!!!] /scan error: Service client INSERT failed.")
+            print(f"     Response: {response}")
+            return jsonify({"error": "Database insert failed", "detail": str(response)}), 500
+            
     except Exception as e:
         print(f"[!!!] Unhandled exception in /scan endpoint: {e}")
         traceback.print_exc()

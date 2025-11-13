@@ -7,3 +7,5 @@ node_modules
 vite.config.*s.*
 .env
 .env
+*.sql
+backup-*.sql
