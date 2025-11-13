@@ -122,131 +122,40 @@ def start_scan():
 
 @app.route('/scan/<scan_id>/complete', methods=['POST'])
 def complete_scan(scan_id):
-    """Process completed scan results and save to Supabase"""
-    try:
-        # 1. Get user JWT
-        auth_header = request.headers.get("Authorization", "")
-        if not auth_header.startswith("Bearer "):
-            return jsonify({"error": "Missing Authorization header"}), 401
-        
-        user_jwt = auth_header.split(" ", 1)[1]
-        
-        # 2. Get task_id from request
-        payload = request.get_json()
-        task_id = payload.get('task_id')
-        
-        if not task_id:
-            return jsonify({"error": "task_id is required"}), 400
-        
-        print(f"[*] /scan/{scan_id}/complete: Processing completion for task {task_id}")
-        
-        # 3. Retrieve task result from Celery
-        task = celery_app.AsyncResult(task_id)
-        
-        if task.state != 'SUCCESS':
-            print(f"[!!!] Task {task_id} is not in SUCCESS state: {task.state}")
-            return jsonify({"error": f"Task not complete. Current state: {task.state}"}), 400
-        
-        # 4. Get the scan results
-        scan_results = task.result
-        print(f"[*] Retrieved scan results. Keys: {list(scan_results.keys())}")
-        
-        # 5. Prepare headers for Supabase requests
-        headers = {
-            "Authorization": f"Bearer {user_jwt}",
-            "apikey": SUPABASE_ANON_KEY,
-            "Content-Type": "application/json",
-            "Prefer": "return=representation"
-        }
-        
-        # 6. Get workspace_id from scan record
-        scan_url = f"{SUPABASE_URL}/rest/v1/scans?id=eq.{scan_id}&select=workspace_id"
-        scan_response = requests.get(scan_url, headers=headers)
-        
-        if scan_response.status_code != 200 or not scan_response.json():
-            print(f"[!!!] Could not fetch scan record for {scan_id}")
-            return jsonify({"error": "Scan not found"}), 404
-        
-        workspace_id = scan_response.json()[0]['workspace_id']
-        print(f"[*] Found workspace_id: {workspace_id}")
-        
-        # 7. Save assets to Supabase
-        vulnerability_details = scan_results.get('vulnerability_details', [])
-        print(f"[*] Processing {len(vulnerability_details)} hosts...")
-        
-        assets_saved = 0
-        vulns_saved = 0
-        
-        for host_data in vulnerability_details:
-            host_ip = host_data.get('ip_address')
-            hostname = host_data.get('host', host_ip)
-            
-            # Create asset record
-            asset_data = {
-                "workspace_id": workspace_id,
-                "hostname": hostname,
-                "ip_address": host_ip,
-                "status": "online",
-                "last_scan": "now()"
-            }
-            
-            asset_url = f"{SUPABASE_URL}/rest/v1/assets"
-            asset_response = requests.post(asset_url, json=asset_data, headers=headers)
-            
-            if asset_response.status_code == 201:
-                assets_saved += 1
-                asset_id = asset_response.json()[0]['id']
-                print(f"[*] Created asset: {hostname} ({host_ip}) - ID: {asset_id}")
-                
-                # Save vulnerabilities for this asset
-                vulnerabilities = host_data.get('vulnerabilities', [])
-                for vuln in vulnerabilities:
-                    vuln_data = {
-                        "workspace_id": workspace_id,
-                        "asset_id": asset_id,
-                        "scan_id": scan_id,
-                        "cve_id": vuln.get('cve_id'),
-                        "service": vuln.get('service', 'Unknown'),
-                        "port": vuln.get('port'),
-                        "severity": vuln.get('severity', 'Unknown'),
-                        "cvss_score": vuln.get('cvss_score', 0.0),
-                        "description": vuln.get('description', ''),
-                        "status": "open"
-                    }
-                    
-                    vuln_url = f"{SUPABASE_URL}/rest/v1/vulnerabilities"
-                    vuln_response = requests.post(vuln_url, json=vuln_data, headers=headers)
-                    
-                    if vuln_response.status_code == 201:
-                        vulns_saved += 1
-            else:
-                print(f"[!!!] Failed to create asset {hostname}: {asset_response.text}")
-        
-        # 8. Update scan status to 'completed'
-        update_url = f"{SUPABASE_URL}/rest/v1/scans?id=eq.{scan_id}"
-        update_data = {
-            "status": "completed",
-            "completed_at": "now()"
-        }
-        
-        update_response = requests.patch(update_url, json=update_data, headers=headers)
-        
-        if update_response.status_code == 200:
-            print(f"[*] Scan {scan_id} marked as completed")
-        else:
-            print(f"[!!!] Failed to update scan status: {update_response.text}")
-        
-        # 9. Return success
-        return jsonify({
-            "message": "Scan results processed successfully",
-            "assets_saved": assets_saved,
-            "vulnerabilities_saved": vulns_saved
-        }), 200
+    """
+    DEPRECATED: Worker now saves scan results directly via service role client.
     
-    except Exception as e:
-        print(f"[!!!] Error in /scan/{scan_id}/complete: {e}")
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+    This endpoint previously performed 127 lines of complex logic:
+    1. Fetched completed scan results from Celery using user JWT
+    2. Made multiple HTTP requests to Supabase (subject to RLS)
+    3. Manually inserted assets and vulnerabilities one-by-one
+    4. Updated scan status using user JWT
+    
+    ALL of this is now handled by the worker (tasks.py lines 171-172) using
+    the service role client, which:
+    - Bypasses RLS policies (more reliable)
+    - Saves data in a single transaction (better performance)
+    - Ensures data consistency (no race conditions)
+    
+    This endpoint is kept temporarily for backwards compatibility during
+    frontend transition. It will be removed in a future release.
+    
+    **DO NOT USE THIS ENDPOINT** - Worker handles everything automatically.
+    """
+    print(f"[!!!] ========================================")
+    print(f"[!!!] DEPRECATED ENDPOINT CALLED")
+    print(f"[!!!] /scan/{scan_id}/complete")
+    print(f"[!!!] Worker already saved data for this scan")
+    print(f"[!!!] This endpoint does nothing")
+    print(f"[!!!] Frontend should NOT call this")
+    print(f"[!!!] ========================================")
+    
+    return jsonify({
+        "status": "deprecated",
+        "message": "Worker handles data saves automatically. This endpoint is no longer needed.",
+        "scan_id": scan_id,
+        "warning": "Frontend should stop calling this endpoint. Worker saves data directly."
+    }), 200
 
 @app.route('/results/<task_id>', methods=['GET'])
 def get_results(task_id):
