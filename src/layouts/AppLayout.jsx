@@ -8,9 +8,6 @@ import { workspaceService } from '../services/workspaceService';
 import { useAuth } from '../contexts/AuthContext';
 import NewScanModal from '../components/modals/NewScanModal';
 import { scannerApiService } from '../services/scannerApiService';
-import { assetService } from '../services/assetService';
-import { vulnerabilityService } from '../services/vulnerabilityService';
-import { supabase } from '../lib/supabase';
 import Icon from '../components/AppIcon';
 import { showToast } from '../utils/toast';
 
@@ -23,155 +20,6 @@ const mapSeverity = (severity) => {
   if (lower.includes('medium')) return 'Medium';
   if (lower.includes('low')) return 'Low';
   return 'Info';
-};
-
-/**
- * Handles the logic for finding or creating a network asset.
- * @param {object} hostDetails - The asset details from the scanner.
- * @param {string} workspaceId - The current workspace ID.
- * @returns {Promise<string>} The ID of the upserted asset.
- */
-const upsertAsset = async (hostDetails, workspaceId) => {
-  if (!hostDetails?.ip_address) {
-    throw new Error("Cannot save asset: IP address is missing from scan data.");
-  }
-
-  const assetData = {
-    workspace_id: workspaceId,
-    hostname: hostDetails.host,
-    ip_address: hostDetails.ip_address,
-    operating_system: hostDetails.os,
-    os_version: hostDetails.os_version,
-    mac_address: hostDetails.mac_address,
-    open_ports: hostDetails.open_ports,
-    last_scan_at: new Date().toISOString(),
-    is_active: true,
-  };
-
-  // 1. Check for existing asset by IP
-  const { data: existing, error: findError } = await supabase
-    .from('assets')
-    .select('id')
-    .eq('workspace_id', workspaceId)
-    .eq('ip_address', assetData.ip_address)
-    .limit(1)
-    .maybeSingle();
-
-  if (findError) {
-    console.error("[AppLayout] Asset lookup raw error:", findError);
-    throw new Error(`Asset lookup failed: ${findError.message}`);
-  }
-
-  // 2. Update or Insert
-  if (existing) {
-    // Update existing asset
-    const { error: updateError } = await assetService.updateAsset(existing.id, {
-      hostname: assetData.hostname,
-      last_scan_at: assetData.last_scan_at,
-      operating_system: assetData.operating_system,
-      is_active: true,
-    });
-
-    if (updateError) {
-      console.error("[AppLayout] Asset update raw error:", updateError);
-      throw new Error(`Failed to update asset ${existing.id}: ${updateError.message}`);
-    }
-
-    console.log(`[AppLayout] Asset ${assetData.ip_address} (ID: ${existing.id}) updated.`);
-    return existing.id;
-  } else {
-    // Create new asset
-    const { data: newAsset, error: createError } = await assetService.createAsset(assetData);
-
-    if (createError) {
-      console.error("[AppLayout] Asset creation raw error:", createError);
-      throw new Error(`Failed to create asset ${assetData.ip_address}: ${createError.message}`);
-    }
-
-    if (!newAsset) {
-      throw new Error("Asset creation returned no data despite no error.");
-    }
-
-    console.log(`[AppLayout] Asset ${assetData.ip_address} (ID: ${newAsset.id}) created.`);
-    return newAsset.id;
-  }
-};
-
-/**
- * Handles the logic for finding or creating a vulnerability for a specific asset.
- * @param {object} vuln - The vulnerability details from the scanner.
- * @param {string} assetId - The ID of the parent asset.
- * @param {string} workspaceId - The current workspace ID.
- * @param {string} scanId - The ID of the scan that found this vulnerability.
- */
-const upsertVulnerability = async (vuln, assetId, workspaceId, scanId) => {
-  if (!vuln || !vuln.name) {
-    console.warn("[AppLayout] Skipping empty vulnerability data.", vuln);
-    return;
-  }
-
-  const vulnData = {
-    workspace_id: workspaceId,
-    asset_id: assetId,
-    scan_id: scanId || null,
-    cve_id: vuln.cve || null,
-    title: vuln.name || vuln.id_from_source || 'Unknown Vulnerability',
-    description: vuln.details,
-    severity: mapSeverity(vuln.severity),
-    cvss_score: vuln.cvss_score || 0.0,
-    status: 'open',
-    port: vuln.port,
-    service: vuln.service,
-    remediation_steps: 'Check Nmap output or CVE details.',
-    discovered_at: new Date().toISOString(),
-    references: vuln.references,
-  };
-
-  // 1. Check for existing vulnerability (based on constraints)
-  let query = supabase
-    .from('vulnerabilities')
-    .select('id, status')
-    .eq('asset_id', assetId)
-    .eq('title', vulnData.title);
-
-  if (vulnData.port) {
-    query = query.eq('port', vulnData.port);
-  } else {
-    query = query.is('port', null);
-  }
-
-  const { data: existing, error: findError } = await query.maybeSingle();
-
-  if (findError) {
-    console.error("[AppLayout] Vuln lookup raw error:", findError);
-    throw new Error(`Vulnerability lookup failed: ${findError.message}`);
-  }
-
-  // 2. Update or Insert
-  if (existing) {
-    if (existing.status !== 'open') {
-      const { error: updateError } = await supabase
-        .from('vulnerabilities')
-        .update({ status: 'open', updated_at: new Date().toISOString() })
-        .eq('id', existing.id);
-
-      if (updateError) {
-        console.error("[AppLayout] Vuln update raw error:", updateError);
-        throw new Error(`Failed to update vuln status: ${updateError.message}`);
-      }
-
-      console.log(`[AppLayout] Vuln "${vulnData.title}" status reset to 'open'.`);
-    }
-  } else {
-    const { error: createError } = await vulnerabilityService.createVulnerability(vulnData);
-
-    if (createError) {
-      console.error("[AppLayout] Vuln creation raw error:", createError);
-      throw new Error(`Failed to create vuln: ${createError.message}`);
-    }
-
-    console.log(`[AppLayout] Vuln "${vulnData.title}" created.`);
-  }
 };
 
 const AppLayout = () => {
@@ -188,79 +36,43 @@ const AppLayout = () => {
   const [scanStatusMessage, setScanStatusMessage] = useState('');
   const [scanResult, setScanResult] = useState(null);
 
-  /**
-   * Main function to process the full report from Celery,
-   * upsert assets, and upsert vulnerabilities.
-   */
-  const processAndSaveScanResults = async (result) => {
-    if (!selectedWorkspace) {
-      setScanError("Cannot save results: No workspace is selected.");
-      setScanStatusMessage('');
-      return;
-    }
-
-    if (!result?.vulnerability_details || result.vulnerability_details.length === 0) {
-      setScanStatusMessage('Scan complete. No hosts or vulnerabilities found.');
-      setScanError(null);
-      return;
-    }
-
-    console.log("[AppLayout] Processing scan results...", result);
-    setScanStatusMessage('Processing and saving scan results...');
-
-    const hostDetailsList = result.vulnerability_details || [];
-    const scanId = result.scan_id;
-    let accumulatedErrors = [];
-
-    for (const hostDetails of hostDetailsList) {
-      if (!hostDetails) {
-        console.warn("[AppLayout] Skipping empty hostDetails item.");
-        continue;
+  // ✅ Move fetchWorkspaces HERE (outside useEffect, at component level)
+  const fetchWorkspaces = async () => {
+    try {
+      const { data, error } = await workspaceService.getWorkspaces();
+      
+      if (error) {
+        console.error("[AppLayout] Error fetching workspaces:", error);
+        setWorkspaces([]);
+        throw new Error(error.message || 'Unknown error fetching workspaces');
       }
 
-      let assetId = null;
-      const hostIdentifier = hostDetails.host || hostDetails.ip_address;
+      if (Array.isArray(data)) {
+        console.log(`[AppLayout] Found ${data.length} workspaces.`);
+        setWorkspaces(data);
 
-      try {
-        setScanStatusMessage(`Processing asset: ${hostIdentifier}...`);
-        assetId = await upsertAsset(hostDetails, selectedWorkspace);
-
-        const vulnerabilities = hostDetails.vulnerabilities || [];
-        if (vulnerabilities.length > 0) {
-          setScanStatusMessage(`Saving ${vulnerabilities.length} vulnerabilities for ${hostIdentifier}...`);
-          for (const vuln of vulnerabilities) {
-            try {
-              await upsertVulnerability(vuln, assetId, selectedWorkspace, scanId);
-            } catch (vulnError) {
-              console.error(vulnError);
-              accumulatedErrors.push(vulnError.message);
-            }
+        if (data.length > 0) {
+          if (!selectedWorkspace || !data.some(w => w.id === selectedWorkspace)) {
+            console.log(`[AppLayout] Auto-selecting first workspace: ${data[0].id}`);
+            setSelectedWorkspace(data[0].id);
           }
+        } else {
+          console.warn("[AppLayout] User has no workspaces. RLS link likely failed or is missing.");
+          setSelectedWorkspace('');
         }
-      } catch (assetError) {
-        console.error(assetError);
-        accumulatedErrors.push(assetError.message);
-        setScanStatusMessage(`Failed to save asset ${hostIdentifier}. See console.`);
-        continue;
+      } else {
+        console.warn("[AppLayout] Received non-array data for workspaces, setting to empty.", data);
+        setWorkspaces([]);
+        setSelectedWorkspace('');
       }
-    }
-
-    if (accumulatedErrors.length > 0) {
-      setScanError(`Scan complete, but ${accumulatedErrors.length} errors occurred during saving. Check console.`);
-      setScanStatusMessage('');
-      console.error("Accumulated save errors:", accumulatedErrors);
-      showToast('error', `Scan completed with ${accumulatedErrors.length} errors. Check console for details.`);
-    } else {
-      setScanError(null);
-      setScanStatusMessage('Scan results processed and saved successfully!');
-      showToast('success', 'Scan completed successfully! Refreshing dashboard...');
-      setTimeout(() => {
-        window.location.reload();
-      }, 2000);
+    } catch (error) {
+      console.error("[AppLayout] Failed to fetch workspaces (catch block):", error.message);
+      setWorkspaces([]);
+      setScanError(`Failed to load workspaces: ${error.message}`);
     }
   };
 
-  // Effect to fetch user workspaces
+  // Effect to fetch user workspaces on mount
   useEffect(() => {
     if (!user) {
       navigate('/login');
@@ -271,43 +83,9 @@ const AppLayout = () => {
       return;
     }
 
-    const fetchWorkspaces = async () => {
-      try {
-        const { data, error } = await workspaceService.getWorkspaces();
+    fetchWorkspaces();  // ✅ Call the function (now defined above)
+  }, [user, navigate, userProfile]);  // ✅ Remove selectedWorkspace from dependencies
 
-        if (error) {
-          console.error("[AppLayout] Error fetching workspaces:", error);
-          setWorkspaces([]);
-          throw new Error(error.message || 'Unknown error fetching workspaces');
-        }
-
-        if (Array.isArray(data)) {
-          console.log(`[AppLayout] Found ${data.length} workspaces.`);
-          setWorkspaces(data);
-
-          if (data.length > 0) {
-            if (!selectedWorkspace || !data.some(w => w.id === selectedWorkspace)) {
-              console.log(`[AppLayout] Auto-selecting first workspace: ${data[0].id}`);
-              setSelectedWorkspace(data[0].id);
-            }
-          } else {
-            console.warn("[AppLayout] User has no workspaces. RLS link likely failed or is missing.");
-            setSelectedWorkspace('');
-          }
-        } else {
-          console.warn("[AppLayout] Received non-array data for workspaces, setting to empty.", data);
-          setWorkspaces([]);
-          setSelectedWorkspace('');
-        }
-      } catch (error) {
-        console.error("[AppLayout] Failed to fetch workspaces (catch block):", error.message);
-        setWorkspaces([]);
-        setScanError(`Failed to load workspaces: ${error.message}`);
-      }
-    };
-
-    fetchWorkspaces();
-  }, [user, navigate, selectedWorkspace, userProfile]);
 
   // Effect to poll for scan results
   useEffect(() => {
@@ -323,54 +101,21 @@ const AppLayout = () => {
         console.log(`[AppLayout] Poll response for ${scanTaskId}:`, data);
 
         if (data.state === 'SUCCESS') {
-          console.log(`[AppLayout] Task ${scanTaskId} SUCCESS.`);
+          console.log(`[AppLayout] Task ${scanTaskId} SUCCESS. Worker saved all data.`);
           clearInterval(pollInterval);
-          setScanStatusMessage('Scan complete! Processing results...');
+          
+          // Worker already saved all data via service role client (tasks.py lines 171-172)
+          // No need to call /complete endpoint or save data manually
+          setScanStatusMessage('Scan complete!');
           setScanResult(data.result);
           setIsScanning(false);
           setScanTaskId(null);
-
-          // ✅ NEW: Call backend completion endpoint if scanId and session available
-          if (scanId && session?.access_token) {
-            try {
-              console.log(`[AppLayout] Calling completion endpoint for scan ${scanId}`);
-              const completeResponse = await fetch(
-                `${import.meta.env.VITE_SCANNER_API_URL}/scan/${scanId}/complete`,
-                {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${session.access_token}`
-                  },
-                  body: JSON.stringify({ task_id: scanTaskId })
-                }
-              );
-
-              if (completeResponse.ok) {
-                const result = await completeResponse.json();
-                console.log('[AppLayout] Scan results saved via backend:', result);
-                showToast('success', `Scan completed! ${result.assets_saved} assets and ${result.vulnerabilities_saved} vulnerabilities saved.`);
-                setTimeout(() => {
-                  window.location.reload();
-                }, 2000);
-              } else {
-                const error = await completeResponse.json();
-                console.error('[AppLayout] Failed to save scan results via backend:', error);
-                showToast('error', `Scan completed but failed to save results: ${error.error || 'Unknown error'}`);
-                // Fall back to local processing
-                await processAndSaveScanResults(data.result);
-              }
-            } catch (error) {
-              console.error('[AppLayout] Error calling completion endpoint:', error);
-              showToast('error', 'Scan completed but error saving results. Attempting local save...');
-              // Fall back to local processing
-              await processAndSaveScanResults(data.result);
-            }
-          } else {
-            // No scanId or session token, fall back to local processing
-            console.warn('[AppLayout] No scanId or session token, falling back to local processing');
-            await processAndSaveScanResults(data.result);
-          }
+          
+          showToast('success', 'Scan completed successfully!');
+          
+          // Refresh workspaces to load new scan data
+          console.log('[AppLayout] Refreshing workspaces to show new scan data...');
+          fetchWorkspaces();
         } else if (data.state === 'FAILURE') {
           console.error(`[AppLayout] Task ${scanTaskId} FAILURE. Info:`, data.status);
           clearInterval(pollInterval);
