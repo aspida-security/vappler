@@ -4,50 +4,58 @@ Celery Tasks for Vappler Security Scanner
 Handles asynchronous vulnerability scanning and attack path analysis
 """
 
-import requests, os, traceback
+import requests, os, traceback, psycopg2
 from celery import Celery
 from scanner.mapper import NetworkMapper
+# ❌ REMOVE: We are no longer using the supabase-python client here
+# from supabase import create_client, Client 
 
-# Initialize Celery with Redis broker and backend
+# ... (celery_app definition remains the same) ...
 celery_app = Celery(
     'tasks',
     broker='redis://vappler-redis:6379/0',
     backend='redis://vappler-redis:6379/0'
 )
-
-# ✅ CRITICAL FIX: Configure Celery with extended result expiration
 celery_app.conf.update(
     task_serializer='json',
     accept_content=['json'],
     result_serializer='json',
     timezone='UTC',
     enable_utc=True,
-    result_expires=7200,  # ✅ Keep results for 2 hours (enough for long scans + frontend polling)
-    task_track_started=True,  # ✅ Track when tasks start (helps with PENDING detection)
-    task_acks_late=True,  # ✅ Acknowledge tasks after completion
-    worker_prefetch_multiplier=1,  # ✅ Process one task at a time for long-running scans
+    result_expires=7200,
+    task_track_started=True,
+    task_acks_late=True,
+    worker_prefetch_multiplier=1,
 )
 
-# Supabase configuration
+# ✅ FIX: Get the DIRECT database connection string
+# This assumes your docker-compose.yml passes DATABASE_URL to the worker
+# If it doesn't, you must add it there.
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
+# ✅ FIX: Get Supabase URL & Service Key for *requests* (for simple updates)
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY")
 
 def update_scan_status(scan_id, status, error_message=None):
-    """Update scan record status in Supabase via PostgREST"""
+    """Update scan record status in Supabase via PostgREST (requests is fine for this)"""
     if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
         print(f"[WARN] Cannot update scan status: Missing Supabase config")
         return
     
+    # ... (this function remains the same, as requests is fine for simple updates) ...
     url = f"{SUPABASE_URL}/rest/v1/scans?id=eq.{scan_id}"
     headers = {
         "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
-        "apikey": SUPABASE_SERVICE_KEY,
+        "apikey": SUPABASE_SERVICE_KEY, # PostgREST requires apikey
         "Content-Type": "application/json"
     }
     
     update_data = {"status": status}
     if error_message:
-        update_data["error_message"] = error_message
+        update_data["description"] = f"Error: {error_message}"
+    if status == "completed" or status == "failed":
+        update_data["completed_at"] = "now()"
     
     try:
         resp = requests.patch(url, json=update_data, headers=headers, timeout=10)
@@ -58,98 +66,30 @@ def update_scan_status(scan_id, status, error_message=None):
     except Exception as e:
         print(f"[ERROR] update_scan_status exception: {e}")
 
-def save_assets_to_supabase(scan_id, workspace_id, assets_list):
-    """Save discovered assets to Supabase"""
-    if not SUPABASE_URL or not SUPABASE_SERVICE_KEY or not assets_list:
-        return 0
-    
-    url = f"{SUPABASE_URL}/rest/v1/assets"
-    headers = {
-        "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
-        "apikey": SUPABASE_SERVICE_KEY,
-        "Content-Type": "application/json",
-        "Prefer": "resolution=merge-duplicates"
-    }
-    
-    saved_count = 0
-    for asset in assets_list:
-        payload = {
-            "workspace_id": workspace_id,
-            "scan_id": scan_id,
-            "ip_address": asset.get("ip_address"),
-            "hostname": asset.get("hostname"),
-            "status": asset.get("status", "active"),
-            "os_type": asset.get("os_type"),
-            "open_ports": asset.get("open_ports", [])
-        }
-        
-        try:
-            resp = requests.post(url, json=payload, headers=headers, timeout=10)
-            if resp.status_code in [200, 201, 204]:
-                saved_count += 1
-            else:
-                print(f"[WARN] Failed to save asset {asset.get('ip_address')}: {resp.status_code}")
-        except Exception as e:
-            print(f"[ERROR] save_assets exception for {asset.get('ip_address')}: {e}")
-    
-    return saved_count
 
-def save_vulnerabilities_to_supabase(scan_id, workspace_id, vulnerabilities_list):
-    """Save discovered vulnerabilities to Supabase"""
-    if not SUPABASE_URL or not SUPABASE_SERVICE_KEY or not vulnerabilities_list:
-        return 0
-    
-    url = f"{SUPABASE_URL}/rest/v1/vulnerabilities"
-    headers = {
-        "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
-        "apikey": SUPABASE_SERVICE_KEY,
-        "Content-Type": "application/json",
-        "Prefer": "resolution=merge-duplicates"
-    }
-    
-    saved_count = 0
-    for vuln in vulnerabilities_list:
-        payload = {
-            "workspace_id": workspace_id,
-            "scan_id": scan_id,
-            "asset_id": vuln.get("asset_id"),
-            "cve_id": vuln.get("cve_id"),
-            "title": vuln.get("title"),
-            "description": vuln.get("description"),
-            "severity": vuln.get("severity", "unknown"),
-            "cvss_score": vuln.get("cvss_score"),
-            "affected_component": vuln.get("affected_component"),
-            "remediation": vuln.get("remediation"),
-            "status": vuln.get("status", "open")
-        }
-        
-        try:
-            resp = requests.post(url, json=payload, headers=headers, timeout=10)
-            if resp.status_code in [200, 201, 204]:
-                saved_count += 1
-            else:
-                print(f"[WARN] Failed to save vuln {vuln.get('cve_id')}: {resp.status_code}")
-        except Exception as e:
-            print(f"[ERROR] save_vulnerabilities exception for {vuln.get('cve_id')}: {e}")
-    
-    return saved_count
+# ✅ FIX: Helper function to map severity strings to the DB enum
+def map_severity(severity_str):
+    if not severity_str: return 'Info'
+    lower = severity_str.lower()
+    if lower == 'critical': return 'Critical'
+    if lower == 'high': return 'High'
+    if lower == 'medium': return 'Medium'
+    if lower == 'low': return 'Low'
+    return 'Info'
 
 @celery_app.task(bind=True, max_retries=3)
 def run_nmap_scan(self, scan_id, target, workspace_id, scan_type='quick'):
-    """
-    Execute nmap vulnerability scan and save results to Supabase
+    print(f"[*] Starting scan {scan_id} for target {target}")
     
-    Args:
-        scan_id: UUID of the scan record in Supabase
-        target: IP/hostname to scan
-        workspace_id: Workspace UUID
-        scan_type: Type of scan (quick/full/custom)
-    """
+    # ✅ FIX: Check for DATABASE_URL
+    if not DATABASE_URL:
+        print("[!!!] WORKER ERROR: DATABASE_URL is not set. Cannot connect to PostgreSQL.")
+        raise Exception("Worker missing DATABASE_URL environment variable.")
+
+    conn = None
     try:
-        print(f"[*] Starting scan {scan_id} for target {target}")
         update_scan_status(scan_id, "running")
         
-        # Initialize mapper and run scan
         mapper = NetworkMapper(target)
         print(f"[*] Discovering hosts in {target}...")
         mapper.discover_hosts()
@@ -157,39 +97,126 @@ def run_nmap_scan(self, scan_id, target, workspace_id, scan_type='quick'):
         if not mapper.hosts_list:
             print("[!] No hosts found.")
             update_scan_status(scan_id, "failed", error_message="No hosts discovered")
-            return {"error": "No hosts found", "scan_id": scan_id}
+            return {"error": "No hosts found", "scan_id": scan_id, "assets_saved": 0, "vulns_saved": 0}
         
-        print(f"[*] Running vulnerability detection...")
+        print(f"[*] Hosts discovered: {mapper.hosts_list}")
+        print(f"[*] Running vulnerability scan...")
         mapper.find_vulnerabilities()
-        
-        # Use first discovered host as crown jewel for attack path
+        print(f"[*] Vulnerability scan complete.")
+
         crown_jewel = mapper.hosts_list[0]
         print(f"[*] Calculating attack path to {crown_jewel}...")
         result = mapper.find_attack_path_for_api(crown_jewel)
         
-        # Save results to Supabase
-        assets_saved = save_assets_to_supabase(scan_id, workspace_id, result.get("assets", []))
-        vulns_saved = save_vulnerabilities_to_supabase(scan_id, workspace_id, result.get("vulnerabilities", []))
+        if "error" in result:
+            update_scan_status(scan_id, "failed", error_message=result['error'])
+            return {**result, "scan_id": scan_id, "assets_saved": 0, "vulns_saved": 0}
+
+        # --- ✅ START REFACTORED SAVE LOGIC (using psycopg2) ---
+        
+        assets_saved = 0
+        vulns_saved = 0
+        
+        host_list = result.get("vulnerability_details", [])
+        if not host_list:
+             print("[!] Mapper returned no vulnerability details. Nothing to save.")
+
+        # Connect to the database
+        conn = psycopg2.connect(DATABASE_URL)
+        cursor = conn.cursor()
+
+        for host_data in host_list:
+            try:
+                # 2. UPSERT ASSET
+                asset_payload = (
+                    workspace_id,
+                    host_data.get("ip_address"),
+                    host_data.get("host"),
+                    True, # is_active
+                    "now()" # last_scan_at
+                )
+                
+                # This raw SQL is faster and uses the constraints we built
+                sql_upsert_asset = """
+                INSERT INTO public.assets (workspace_id, ip_address, hostname, is_active, last_scan_at)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (workspace_id, ip_address) DO UPDATE SET
+                    hostname = EXCLUDED.hostname,
+                    is_active = EXCLUDED.is_active,
+                    last_scan_at = EXCLUDED.last_scan_at
+                RETURNING id;
+                """
+                
+                cursor.execute(sql_upsert_asset, asset_payload)
+                asset_id = cursor.fetchone()[0] # Get the ID of the inserted/updated asset
+                assets_saved += 1
+                
+                # 3. PREPARE & UPSERT VULNERABILITIES for this asset
+                vuln_list = host_data.get("vulnerabilities", [])
+                if not vuln_list:
+                    continue # No vulns for this host, move to next host
+
+                vuln_payloads = []
+                for vuln in vuln_list:
+                    vuln_payloads.append((
+                        workspace_id,
+                        asset_id,
+                        scan_id,
+                        vuln.get("cve"),
+                        vuln.get("name"),
+                        vuln.get("details"),
+                        map_severity(vuln.get("severity")),
+                        vuln.get("cvss_score"),
+                        "open", # status
+                        vuln.get("port"),
+                        vuln.get("service"),
+                        "now()" # discovered_at
+                    ))
+
+                if vuln_payloads:
+                    # Use psycopg2's 'extras' for a fast bulk upsert
+                    from psycopg2.extras import execute_values
+                    
+                    sql_upsert_vulns = """
+                    INSERT INTO public.vulnerabilities (
+                        workspace_id, asset_id, scan_id, cve_id, title, description,
+                        severity, cvss_score, status, port, service, discovered_at
+                    )
+                    VALUES %s
+                    ON CONFLICT (asset_id, title, port) DO UPDATE SET
+                        description = EXCLUDED.description,
+                        severity = EXCLUDED.severity,
+                        cvss_score = EXCLUDED.cvss_score,
+                        status = 'open',
+                        discovered_at = EXCLUDED.discovered_at;
+                    """
+                    
+                    execute_values(cursor, sql_upsert_vulns, vuln_payloads)
+                    vulns_saved += len(vuln_payloads)
+
+            except Exception as save_err:
+                conn.rollback() # Rollback this specific host
+                print(f"[!!!] Failed to save data for host {host_data.get('ip_address')}: {save_err}")
+                traceback.print_exc()
+            else:
+                conn.commit() # Commit changes for this host
+
+        # --- ✅ END REFACTORED SAVE LOGIC ---
         
         print(f"[✓] Saved {assets_saved} assets and {vulns_saved} vulnerabilities")
+        update_scan_status(scan_id, "completed")
         
-        if "error" in result:
-            print(f"[!] Scan completed with warnings: {result['error']}")
-            update_scan_status(scan_id, "completed", error_message=result['error'])
-        else:
-            print(f"[✓] Scan {scan_id} completed successfully")
-            update_scan_status(scan_id, "completed")
-        
-        # ✅ CRITICAL FIX: Return full result with vulnerability_details for /complete endpoint
         return {
             "scan_id": scan_id,
             "assets_saved": assets_saved,
             "vulnerabilities_saved": vulns_saved,
             "status": "completed",
-            "vulnerability_details": result.get("vulnerability_details", [])  # ✅ ADD THIS
+            "vulnerability_details": result.get("vulnerability_details", [])
         }
     
     except Exception as e:
+        if conn:
+            conn.rollback() # Rollback any uncommitted changes
         error_str = str(e)
         print(f"[ERROR] Scan {scan_id} failed: {error_str}")
         print(traceback.format_exc())
@@ -200,7 +227,14 @@ def run_nmap_scan(self, scan_id, target, workspace_id, scan_type='quick'):
             raise self.retry(exc=e, countdown=120)
         else:
             update_scan_status(scan_id, "failed", error_message=error_str)
-            raise
+            return {"error": error_str, "scan_id": scan_id, "assets_saved": 0, "vulns_saved": 0}
+    finally:
+        if conn:
+            cursor.close()
+            conn.close()
+
+
+# ... (generate_report and cleanup_old_scans remain the same) ...
 
 @celery_app.task
 def generate_report(scan_id, workspace_id):
