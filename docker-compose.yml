@@ -51,6 +51,8 @@ services:
       - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
       # Redis connection
       - REDIS_URL=redis://vappler-redis:6379/0
+      # ✅ ADD THIS LINE:
+      - DATABASE_URL=postgresql://postgres:postgres@host.docker.internal:63322/postgres
 
   test-target:
     image: "httpd:alpine"

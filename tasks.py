@@ -4,19 +4,18 @@ Celery Tasks for Vappler Security Scanner
 Handles asynchronous vulnerability scanning and attack path analysis
 """
 
-import requests, os, traceback
+import requests, os, traceback, psycopg2
 from celery import Celery
 from scanner.mapper import NetworkMapper
-# ✅ FIX: Import Supabase client
-from supabase import create_client, Client
+# ❌ REMOVE: We are no longer using the supabase-python client here
+# from supabase import create_client, Client 
 
-# Initialize Celery with Redis broker and backend
+# ... (celery_app definition remains the same) ...
 celery_app = Celery(
     'tasks',
     broker='redis://vappler-redis:6379/0',
     backend='redis://vappler-redis:6379/0'
 )
-
 celery_app.conf.update(
     task_serializer='json',
     accept_content=['json'],
@@ -29,28 +28,22 @@ celery_app.conf.update(
     worker_prefetch_multiplier=1,
 )
 
-# Supabase configuration
+# ✅ FIX: Get the DIRECT database connection string
+# This assumes your docker-compose.yml passes DATABASE_URL to the worker
+# If it doesn't, you must add it there.
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
+# ✅ FIX: Get Supabase URL & Service Key for *requests* (for simple updates)
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY")
 
-# ✅ FIX: Create a dedicated service client for the worker
-def get_service_client():
-    if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
-        print("[!!!] WORKER ERROR: Missing Supabase environment variables.")
-        return None
-    try:
-        return create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
-    except Exception as e:
-        print(f"[!!!] Failed to initialize Service Role Client in worker: {e}")
-        return None
-
 def update_scan_status(scan_id, status, error_message=None):
-    """Update scan record status in Supabase via PostgREST"""
-    service_client = get_service_client()
-    if not service_client:
-        print(f"[WARN] Cannot update scan status: Service client not available.")
+    """Update scan record status in Supabase via PostgREST (requests is fine for this)"""
+    if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
+        print(f"[WARN] Cannot update scan status: Missing Supabase config")
         return
     
+    # ... (this function remains the same, as requests is fine for simple updates) ...
     url = f"{SUPABASE_URL}/rest/v1/scans?id=eq.{scan_id}"
     headers = {
         "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
@@ -60,7 +53,6 @@ def update_scan_status(scan_id, status, error_message=None):
     
     update_data = {"status": status}
     if error_message:
-        # Assuming your 'scans' table has an 'error_message' text column
         update_data["description"] = f"Error: {error_message}"
     if status == "completed" or status == "failed":
         update_data["completed_at"] = "now()"
@@ -74,13 +66,6 @@ def update_scan_status(scan_id, status, error_message=None):
     except Exception as e:
         print(f"[ERROR] update_scan_status exception: {e}")
 
-# ❌ DEPRECATED: This logic is flawed and will be moved into the main task
-# def save_assets_to_supabase(scan_id, workspace_id, assets_list):
-#     ...
-
-# ❌ DEPRECATED: This logic is flawed and will be moved into the main task
-# def save_vulnerabilities_to_supabase(scan_id, workspace_id, vulnerabilities_list):
-#     ...
 
 # ✅ FIX: Helper function to map severity strings to the DB enum
 def map_severity(severity_str):
@@ -95,10 +80,13 @@ def map_severity(severity_str):
 @celery_app.task(bind=True, max_retries=3)
 def run_nmap_scan(self, scan_id, target, workspace_id, scan_type='quick'):
     print(f"[*] Starting scan {scan_id} for target {target}")
-    service_client = get_service_client()
-    if not service_client:
-        raise Exception("Worker failed to get Supabase service client.")
+    
+    # ✅ FIX: Check for DATABASE_URL
+    if not DATABASE_URL:
+        print("[!!!] WORKER ERROR: DATABASE_URL is not set. Cannot connect to PostgreSQL.")
+        raise Exception("Worker missing DATABASE_URL environment variable.")
 
+    conn = None
     try:
         update_scan_status(scan_id, "running")
         
@@ -124,38 +112,43 @@ def run_nmap_scan(self, scan_id, target, workspace_id, scan_type='quick'):
             update_scan_status(scan_id, "failed", error_message=result['error'])
             return {**result, "scan_id": scan_id, "assets_saved": 0, "vulns_saved": 0}
 
-        # ✅ --- START REFACTORED SAVE LOGIC ---
+        # --- ✅ START REFACTORED SAVE LOGIC (using psycopg2) ---
         
         assets_saved = 0
         vulns_saved = 0
         
-        # 1. Get the list of host objects from the mapper's result
         host_list = result.get("vulnerability_details", [])
         if not host_list:
              print("[!] Mapper returned no vulnerability details. Nothing to save.")
 
+        # Connect to the database
+        conn = psycopg2.connect(DATABASE_URL)
+        cursor = conn.cursor()
+
         for host_data in host_list:
             try:
                 # 2. UPSERT ASSET
-                asset_payload = {
-                    "workspace_id": workspace_id,
-                    "ip_address": host_data.get("ip_address"),
-                    "hostname": host_data.get("host"),
-                    "is_active": True,
-                    "last_scan_at": "now()",
-                    # TODO: Add 'operating_system' if mapper provides it
-                }
+                asset_payload = (
+                    workspace_id,
+                    host_data.get("ip_address"),
+                    host_data.get("host"),
+                    True, # is_active
+                    "now()" # last_scan_at
+                )
                 
-                # Use on_conflict to update existing assets
-                asset_upsert_resp = service_client.table("assets").upsert(
-                    asset_payload, 
-                    on_conflict="workspace_id,ip_address"
-                ).execute()
-
-                if not asset_upsert_resp.data:
-                    raise Exception(f"Asset upsert failed: {asset_upsert_resp.error}")
-
-                asset_id = asset_upsert_resp.data[0]['id']
+                # This raw SQL is faster and uses the constraints we built
+                sql_upsert_asset = """
+                INSERT INTO public.assets (workspace_id, ip_address, hostname, is_active, last_scan_at)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (workspace_id, ip_address) DO UPDATE SET
+                    hostname = EXCLUDED.hostname,
+                    is_active = EXCLUDED.is_active,
+                    last_scan_at = EXCLUDED.last_scan_at
+                RETURNING id;
+                """
+                
+                cursor.execute(sql_upsert_asset, asset_payload)
+                asset_id = cursor.fetchone()[0] # Get the ID of the inserted/updated asset
                 assets_saved += 1
                 
                 # 3. PREPARE & UPSERT VULNERABILITIES for this asset
@@ -165,40 +158,51 @@ def run_nmap_scan(self, scan_id, target, workspace_id, scan_type='quick'):
 
                 vuln_payloads = []
                 for vuln in vuln_list:
-                    vuln_payloads.append({
-                        "workspace_id": workspace_id,
-                        "asset_id": asset_id,
-                        "scan_id": scan_id,
-                        "cve_id": vuln.get("cve"),
-                        "title": vuln.get("name"),
-                        "description": vuln.get("details"),
-                        "severity": map_severity(vuln.get("severity")),
-                        "cvss_score": vuln.get("cvss_score"),
-                        "status": "open",
-                        "port": vuln.get("port"),
-                        "service": vuln.get("service"),
-                        "discovered_at": "now()",
-                        # "has_exploit": vuln.get("has_exploit") # Add this in Phase 3
-                    })
+                    vuln_payloads.append((
+                        workspace_id,
+                        asset_id,
+                        scan_id,
+                        vuln.get("cve"),
+                        vuln.get("name"),
+                        vuln.get("details"),
+                        map_severity(vuln.get("severity")),
+                        vuln.get("cvss_score"),
+                        "open", # status
+                        vuln.get("port"),
+                        vuln.get("service"),
+                        "now()" # discovered_at
+                    ))
 
                 if vuln_payloads:
-                    # Use on_conflict to update existing vulns
-                    vuln_upsert_resp = service_client.table("vulnerabilities").upsert(
-                        vuln_payloads,
-                        on_conflict="asset_id,title,port" # Assumes this is your unique constraint
-                    ).execute()
+                    # Use psycopg2's 'extras' for a fast bulk upsert
+                    from psycopg2.extras import execute_values
                     
-                    if vuln_upsert_resp.error:
-                        raise Exception(f"Vuln upsert failed: {vuln_upsert_resp.error.message}")
+                    sql_upsert_vulns = """
+                    INSERT INTO public.vulnerabilities (
+                        workspace_id, asset_id, scan_id, cve_id, title, description,
+                        severity, cvss_score, status, port, service, discovered_at
+                    )
+                    VALUES %s
+                    ON CONFLICT (asset_id, title, port) DO UPDATE SET
+                        description = EXCLUDED.description,
+                        severity = EXCLUDED.severity,
+                        cvss_score = EXCLUDED.cvss_score,
+                        status = 'open',
+                        discovered_at = EXCLUDED.discovered_at;
+                    """
                     
-                    vulns_saved += len(vuln_upsert_resp.data)
+                    execute_values(cursor, sql_upsert_vulns, vuln_payloads)
+                    vulns_saved += len(vuln_payloads)
 
             except Exception as save_err:
+                conn.rollback() # Rollback this specific host
                 print(f"[!!!] Failed to save data for host {host_data.get('ip_address')}: {save_err}")
                 traceback.print_exc()
-        
-        # ✅ --- END REFACTORED SAVE LOGIC ---
+            else:
+                conn.commit() # Commit changes for this host
 
+        # --- ✅ END REFACTORED SAVE LOGIC ---
+        
         print(f"[✓] Saved {assets_saved} assets and {vulns_saved} vulnerabilities")
         update_scan_status(scan_id, "completed")
         
@@ -211,6 +215,8 @@ def run_nmap_scan(self, scan_id, target, workspace_id, scan_type='quick'):
         }
     
     except Exception as e:
+        if conn:
+            conn.rollback() # Rollback any uncommitted changes
         error_str = str(e)
         print(f"[ERROR] Scan {scan_id} failed: {error_str}")
         print(traceback.format_exc())
@@ -222,6 +228,13 @@ def run_nmap_scan(self, scan_id, target, workspace_id, scan_type='quick'):
         else:
             update_scan_status(scan_id, "failed", error_message=error_str)
             return {"error": error_str, "scan_id": scan_id, "assets_saved": 0, "vulns_saved": 0}
+    finally:
+        if conn:
+            cursor.close()
+            conn.close()
+
+
+# ... (generate_report and cleanup_old_scans remain the same) ...
 
 @celery_app.task
 def generate_report(scan_id, workspace_id):
