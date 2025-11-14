@@ -7,6 +7,6 @@ node_modules
 vite.config.*s.*
 .env
 .env
-*.sql
+#*.sql
 backup-*.sql
 supabase/.temp/
