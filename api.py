@@ -1,4 +1,6 @@
-# FILE: backend/api/api.py
+# FILE: api.py
+# DESCRIPTION: Final, merged API file with JWT auth, scan endpoints,
+# and all RLS-secured MVP read endpoints.
 
 import os
 import requests
@@ -13,7 +15,7 @@ from supabase import create_client, Client
 app = Flask(__name__)
 CORS(app)
 
-# Load Supabase connection details
+# Load Supabase connection details from environment
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY")
 SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY")
@@ -25,6 +27,8 @@ if not SUPABASE_URL or not SUPABASE_ANON_KEY or not SUPABASE_SERVICE_KEY:
 print(f"[*] API configured with SUPABASE_URL: {SUPABASE_URL}")
 print(f"[*] Loaded SUPABASE_SERVICE_KEY: {SUPABASE_SERVICE_KEY[:15]}...")
 
+# --- Service Role Client (Bypasses RLS) ---
+# Used ONLY for privileged backend operations (like /scan insert or worker tasks)
 try:
     service_client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
     print("[✓] Service Role Client initialized (bypasses RLS)")
@@ -32,67 +36,93 @@ except Exception as e:
     print(f"[!!!] Failed to initialize Service Role Client: {e}")
     service_client = None
 
-# Authentication decorator
+# ============================================================================
+# 🔐 AUTHENTICATION
+# ============================================================================
+
 def auth_required(f):
+    """
+    Authentication decorator.
+    Validates JWT and creates a user-specific client (g.user_client)
+    that respects RLS policies for all decorated routes.
+    """
     @wraps(f)
     def decorated_function(*args, **kwargs):
         auth_header = request.headers.get("Authorization", "")
         if not auth_header.startswith("Bearer "):
-            return jsonify({"error": "Missing Authorization header"}), 401
+            return jsonify({"error": "Missing or invalid Authorization header"}), 401
         
-        # ✅ FIXED: Extract token string correctly
         token = auth_header.split("Bearer ")[1]
         
         try:
+            # Decode JWT to get user ID ('sub')
+            # We don't verify signature here; Supabase PostgREST will do that.
             payload = jwt.decode(token, options={"verify_signature": False})
             g.user_id = payload.get("sub")
             
             if not g.user_id:
-                return jsonify({"error": "Invalid token"}), 401
+                return jsonify({"error": "Invalid token: Missing 'sub' (user ID)"}), 401
             
-            print(f"[✓] Authenticated user: {g.user_id}")
+            # --- SECURE CLIENT CREATION ---
+            # Create a new client instance for this specific user.
+            # This client is authenticated *as the user* and will
+            # automatically enforce all database-level RLS policies.
+            g.user_client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+            g.user_client.postgrest.auth(token)
+            # --- END SECURE CLIENT CREATION ---
+
+            print(f"[✓] Auth: User {g.user_id} authenticated. RLS-client created.")
+        
+        except jwt.ExpiredSignatureError:
+            return jsonify({"error": "Token has expired"}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({"error": "Invalid token"}), 401
         except Exception as e:
             print(f"[!!!] Auth error: {str(e)}")
-            return jsonify({"error": "Token validation failed"}), 401
+            return jsonify({"error": "Token validation failed"}), 500
         
         return f(*args, **kwargs)
     return decorated_function
 
-# Test route
+# ============================================================================
+# 🚀 CORE SCANNING ENDPOINTS (Existing)
+# ============================================================================
+
 @app.route('/api/test-auth', methods=['GET'])
 @auth_required
 def test_auth():
-    return jsonify({"message": "Authentication successful!", "created_by": g.user_id}), 200
+    """Test route to confirm authentication and g.user_id works"""
+    return jsonify({"message": "Authentication successful!", "user_id": g.user_id}), 200
 
 @app.route('/scan', methods=['POST'])
 @auth_required
 def start_scan():
-    """Initiate a new vulnerability scan"""
+    """
+    Initiate a new vulnerability scan.
+    Uses @auth_required to get user_id, but uses the
+    service_client to *insert* the scan record, bypassing RLS for inserts.
+    """
     try:
-        # 1. Get payload from request
         payload = request.get_json()
         target = payload.get('target')
         scan_type = payload.get('scan_type', 'quick')
         workspace_id = payload.get("workspace_id")
         
-        if not target:
-            return jsonify({"error": "'target' is required."}), 400
+        if not target or not workspace_id:
+            return jsonify({"error": "'target' and 'workspace_id' are required."}), 400
         
-        if not workspace_id:
-            print("[!!!] /scan error: workspace_id missing from request payload.")
-            return jsonify({"error": "workspace_id is required"}), 400
-        
-        # 2. Create scan record in Supabase using service_client (bypasses RLS)
+        # 1. Create scan record using the privileged service_client
         new_scan_data = {
             "workspace_id": workspace_id,
             "name": f"Scan for {target}",
             "scan_type": scan_type,
-            "status": 'running',
+            "status": 'running', # Worker will update this
             "target_count": 1,
-            "created_by": g.user_id    # ✅ Add the authenticated user's ID from JWT
+            "created_by": g.user_id,    # Link to authenticated user
+            "target": target          # Store the target
         }
         
-        print(f"[*] /scan: Creating scan record in Supabase for user {g.user_id}")
+        print(f"[*] /scan: Creating scan record for user {g.user_id}")
         response = service_client.table("scans").insert(new_scan_data).execute()
         
         if response.data and len(response.data) > 0:
@@ -100,62 +130,20 @@ def start_scan():
             scan_id = created_scan['id']
             print(f"[*] /scan: Scan record created. Scan ID: {scan_id}")
             
-            # 3. Queue Celery task with correct parameters
+            # 2. Queue Celery task
             print(f"[*] /scan: Queuing Celery task...")
             task = run_nmap_scan.delay(scan_id, target, workspace_id, scan_type)
             print(f"[*] /scan: Celery task '{task.id}' queued for scan '{scan_id}'")
             
-            # 4. Return BOTH scan_id and task_id to frontend
-            return jsonify({
-                "scan_id": scan_id,
-                "task_id": task.id
-            }), 202
+            return jsonify({"scan_id": scan_id, "task_id": task.id}), 202
         else:
-            print(f"[!!!] /scan error: Service client INSERT failed.")
-            print(f"     Response: {response}")
+            print(f"[!!!] /scan error: Service client INSERT failed: {response}")
             return jsonify({"error": "Database insert failed", "detail": str(response)}), 500
             
     except Exception as e:
         print(f"[!!!] Unhandled exception in /scan endpoint: {e}")
         traceback.print_exc()
         return jsonify({"error": f"Internal server error: {e}"}), 500
-
-@app.route('/scan/<scan_id>/complete', methods=['POST'])
-def complete_scan(scan_id):
-    """
-    DEPRECATED: Worker now saves scan results directly via service role client.
-    
-    This endpoint previously performed 127 lines of complex logic:
-    1. Fetched completed scan results from Celery using user JWT
-    2. Made multiple HTTP requests to Supabase (subject to RLS)
-    3. Manually inserted assets and vulnerabilities one-by-one
-    4. Updated scan status using user JWT
-    
-    ALL of this is now handled by the worker (tasks.py lines 171-172) using
-    the service role client, which:
-    - Bypasses RLS policies (more reliable)
-    - Saves data in a single transaction (better performance)
-    - Ensures data consistency (no race conditions)
-    
-    This endpoint is kept temporarily for backwards compatibility during
-    frontend transition. It will be removed in a future release.
-    
-    **DO NOT USE THIS ENDPOINT** - Worker handles everything automatically.
-    """
-    print(f"[!!!] ========================================")
-    print(f"[!!!] DEPRECATED ENDPOINT CALLED")
-    print(f"[!!!] /scan/{scan_id}/complete")
-    print(f"[!!!] Worker already saved data for this scan")
-    print(f"[!!!] This endpoint does nothing")
-    print(f"[!!!] Frontend should NOT call this")
-    print(f"[!!!] ========================================")
-    
-    return jsonify({
-        "status": "deprecated",
-        "message": "Worker handles data saves automatically. This endpoint is no longer needed.",
-        "scan_id": scan_id,
-        "warning": "Frontend should stop calling this endpoint. Worker saves data directly."
-    }), 200
 
 @app.route('/results/<task_id>', methods=['GET'])
 def get_results(task_id):
@@ -180,6 +168,282 @@ def get_results(task_id):
     except Exception as e:
         print(f"[!!!] Error in /results/{task_id}: {e}")
         return jsonify({"error": str(e)}), 500
+
+# ============================================================================
+# 📊 MVP READ ENDPOINTS (New & Refactored)
+# All endpoints below use g.user_client to enforce RLS automatically.
+# ============================================================================
+
+@app.route('/api/workspaces', methods=['GET'])
+@auth_required
+def get_workspaces():
+    """
+    GET /api/workspaces
+    Returns all workspaces the user has access to (via RLS).
+    This is now a single, secure, and efficient query.
+    """
+    try:
+        # RLS is enforced automatically by g.user_client
+        response = g.user_client.table("workspaces").select("*").execute()
+        
+        workspaces = response.data or []
+        print(f"[✓] /api/workspaces: Returned {len(workspaces)} workspaces for user {g.user_id}")
+        return jsonify(workspaces), 200
+        
+    except Exception as e:
+        print(f"[ERROR] /api/workspaces: {str(e)}")
+        traceback.print_exc()
+        return jsonify({"error": "Failed to fetch workspaces", "detail": str(e)}), 500
+
+
+@app.route('/api/workspaces/<workspace_id>/stats', methods=['GET'])
+@auth_required
+def get_workspace_stats(workspace_id):
+    """
+    GET /api/workspaces/<workspace_id>/stats
+    Returns aggregated stats for a *single* workspace.
+    RLS is enforced on every query by g.user_client.
+    If the user cannot access the workspace, all counts will be 0.
+    """
+    try:
+        # Total assets
+        assets_response = g.user_client.table("assets") \
+            .select("id", count="exact") \
+            .eq("workspace_id", workspace_id) \
+            .execute()
+        
+        # Total vulnerabilities
+        vulns_response = g.user_client.table("vulnerabilities") \
+            .select("id", count="exact") \
+            .eq("workspace_id", workspace_id) \
+            .execute()
+        
+        # Critical vulnerabilities
+        critical_response = g.user_client.table("vulnerabilities") \
+            .select("id", count="exact") \
+            .eq("workspace_id", workspace_id) \
+            .eq("severity", "Critical") \
+            .eq("status", "open") \
+            .execute()
+        
+        # Active scans
+        scans_response = g.user_client.table("scans") \
+            .select("id", count="exact") \
+            .eq("workspace_id", workspace_id) \
+            .in_("status", ["running", "scheduled"]) \
+            .execute()
+        
+        # Average risk score from assets
+        assets_risk_response = g.user_client.table("assets") \
+            .select("risk_score") \
+            .eq("workspace_id", workspace_id) \
+            .execute()
+        
+        avg_risk_score = 0.0
+        if assets_risk_response.data:
+            scores = [a.get("risk_score", 0.0) or 0.0 for a in assets_risk_response.data]
+            avg_risk_score = sum(scores) / len(scores) if scores else 0.0
+        
+        stats = {
+            "totalAssets": assets_response.count or 0,
+            "totalVulnerabilities": vulns_response.count or 0,
+            "criticalVulns": critical_response.count or 0,
+            "activeScans": scans_response.count or 0,
+            "riskScore": round(avg_risk_score, 1)
+        }
+        
+        print(f"[✓] /api/workspaces/{workspace_id}/stats: {stats}")
+        return jsonify(stats), 200
+        
+    except Exception as e:
+        print(f"[ERROR] /api/workspaces/{workspace_id}/stats: {str(e)}")
+        traceback.print_exc()
+        return jsonify({"error": "Failed to fetch stats", "detail": str(e)}), 500
+
+
+@app.route('/api/assets', methods=['GET'])
+@auth_required
+def get_assets():
+    """
+    GET /api/assets?workspace_id=<id>
+    Returns all assets for a workspace, respecting RLS.
+    """
+    try:
+        workspace_id = request.args.get('workspace_id')
+        if not workspace_id:
+            return jsonify({"error": "workspace_id query param required"}), 400
+        
+        # RLS is enforced by g.user_client
+        assets_response = g.user_client.table("assets") \
+            .select("*, vulnerabilities(count)") \
+            .eq("workspace_id", workspace_id) \
+            .order("risk_score", desc=True) \
+            .execute()
+        
+        assets = assets_response.data or []
+        
+        print(f"[✓] /api/assets: Returned {len(assets)} assets for workspace {workspace_id}")
+        return jsonify(assets), 200
+        
+    except Exception as e:
+        print(f"[ERROR] /api/assets: {str(e)}")
+        traceback.print_exc()
+        return jsonify({"error": "Failed to fetch assets", "detail": str(e)}), 500
+
+
+@app.route('/api/vulnerabilities', methods=['GET'])
+@auth_required
+def get_vulnerabilities():
+    """
+    GET /api/vulnerabilities?workspace_id=<id>
+    Returns all vulnerabilities for a workspace, respecting RLS.
+    """
+    try:
+        workspace_id = request.args.get('workspace_id')
+        if not workspace_id:
+            return jsonify({"error": "workspace_id query param required"}), 400
+        
+        # RLS is enforced by g.user_client
+        vulns_response = g.user_client.table("vulnerabilities") \
+            .select("*, assets(hostname, ip_address)") \
+            .eq("workspace_id", workspace_id) \
+            .order("cvss_score", desc=True) \
+            .execute()
+        
+        vulns = vulns_response.data or []
+        
+        print(f"[✓] /api/vulnerabilities: Returned {len(vulns)} vulnerabilities for workspace {workspace_id}")
+        return jsonify(vulns), 200
+        
+    except Exception as e:
+        print(f"[ERROR] /api/vulnerabilities: {str(e)}")
+        traceback.print_exc()
+        return jsonify({"error": "Failed to fetch vulnerabilities", "detail": str(e)}), 500
+
+
+@app.route('/api/vulnerabilities/top', methods=['GET'])
+@auth_required
+def get_top_vulnerabilities():
+    """
+    GET /api/vulnerabilities/top?workspace_id=<id>
+    Returns top 5 "open" critical/high vulnerabilities for dashboard.
+    """
+    try:
+        workspace_id = request.args.get('workspace_id')
+        if not workspace_id:
+            return jsonify({"error": "workspace_id query param required"}), 400
+        
+        # RLS is enforced by g.user_client
+        vulns_response = g.user_client.table("vulnerabilities") \
+            .select("*, assets(hostname, ip_address)") \
+            .eq("workspace_id", workspace_id) \
+            .in_("severity", ["Critical", "High"]) \
+            .eq("status", "open") \
+            .order("cvss_score", desc=True) \
+            .limit(5) \
+            .execute()
+        
+        vulns = vulns_response.data or []
+        
+        print(f"[✓] /api/vulnerabilities/top: Returned {len(vulns)} top vulnerabilities for workspace {workspace_id}")
+        return jsonify(vulns), 200
+        
+    except Exception as e:
+        print(f"[ERROR] /api/vulnerabilities/top: {str(e)}")
+        traceback.print_exc()
+        return jsonify({"error": "Failed to fetch top vulnerabilities", "detail": str(e)}), 500
+
+
+@app.route('/api/assets/vulnerable', methods=['GET'])
+@auth_required
+def get_vulnerable_assets():
+    """
+    GET /api/assets/vulnerable?workspace_id=<id>
+    Returns top 5 assets with open vulnerabilities, ordered by risk.
+    """
+    try:
+        workspace_id = request.args.get('workspace_id')
+        if not workspace_id:
+            return jsonify({"error": "workspace_id query param required"}), 400
+        
+        # RLS is enforced by g.user_client
+        # This query fetches assets that have at least one 'open' vulnerability
+        # and orders them by their risk_score.
+        assets_response = g.user_client.table("assets") \
+            .select("*, vulnerabilities!inner(status, severity)") \
+            .eq("workspace_id", workspace_id) \
+            .eq("vulnerabilities.status", "open") \
+            .order("risk_score", desc=True) \
+            .limit(5) \
+            .execute()
+
+        assets = assets_response.data or []
+        
+        print(f"[✓] /api/assets/vulnerable: Returned {len(assets)} vulnerable assets for workspace {workspace_id}")
+        return jsonify(assets), 200
+        
+    except Exception as e:
+        print(f"[ERROR] /api/assets/vulnerable: {str(e)}")
+        traceback.print_exc()
+        return jsonify({"error": "Failed to fetch vulnerable assets", "detail": str(e)}), 500
+
+
+@app.route('/api/scans/recent', methods=['GET'])
+@auth_required
+def get_recent_scans():
+    """
+    GET /api/scans/recent?workspace_id=<id>
+    Returns most recent 5 scans for a workspace.
+    """
+    try:
+        workspace_id = request.args.get('workspace_id')
+        if not workspace_id:
+            return jsonify({"error": "workspace_id query param required"}), 400
+        
+        # RLS is enforced by g.user_client
+        scans_response = g.user_client.table("scans") \
+            .select("*") \
+            .eq("workspace_id", workspace_id) \
+            .order("created_at", desc=True) \
+            .limit(5) \
+            .execute()
+        
+        scans = scans_response.data or []
+        
+        print(f"[✓] /api/scans/recent: Returned {len(scans)} recent scans for workspace {workspace_id}")
+        return jsonify(scans), 200
+        
+    except Exception as e:
+        print(f"[ERROR] /api/scans/recent: {str(e)}")
+        traceback.print_exc()
+        return jsonify({"error": "Failed to fetch recent scans", "detail": str(e)}), 500
+
+# ============================================================================
+# 🚀 DEPRECATED ENDPOINTS (To be removed)
+# ============================================================================
+
+@app.route('/scan/<scan_id>/complete', methods=['POST'])
+def complete_scan(scan_id):
+    """
+    DEPRECATED: Worker now saves scan results directly via psycopg2.
+    This endpoint is no longer used by the frontend (AppLayout.jsx)
+    and can be safely removed.
+    """
+    print(f"[!!!] ========================================")
+    print(f"[!!!] DEPRECATED ENDPOINT CALLED: /scan/{scan_id}/complete")
+    print(f"[!!!] This endpoint does nothing. Worker handles all saves.")
+    print(f"[!!!] ========================================")
+    
+    return jsonify({
+        "status": "deprecated",
+        "message": "Worker handles data saves automatically. This endpoint is no longer needed.",
+        "scan_id": scan_id
+    }), 410 # 410 Gone
+
+
+# ============================================================================
+# APP RUNNER
+# ============================================================================
 
 if __name__ == '__main__':
     print("Starting Flask development server...")
