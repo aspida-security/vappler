@@ -10,3 +10,4 @@ vite.config.*s.*
 #*.sql
 backup-*.sql
 supabase/.temp/
+graph_output.json
