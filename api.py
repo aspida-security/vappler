@@ -6,6 +6,7 @@ import os
 import requests
 import traceback
 import jwt
+import json 
 from functools import wraps
 from flask import Flask, request, jsonify, g
 from flask_cors import CORS
@@ -417,6 +418,55 @@ def get_recent_scans():
         print(f"[ERROR] /api/scans/recent: {str(e)}")
         traceback.print_exc()
         return jsonify({"error": "Failed to fetch recent scans", "detail": str(e)}), 500
+
+@app.route('/api/scans/<scan_id>/attack-path', methods=['GET'])
+@auth_required
+def get_scan_attack_path(scan_id):
+    """
+    GET /api/scans/<scan_id>/attack-path
+    Returns the serialized attack path graph (JSON) for a specific scan.
+    RLS is enforced by g.user_client.
+    """
+    try:
+        if not scan_id:
+            return jsonify({"error": "scan_id is required"}), 400
+        
+        # RLS is enforced by g.user_client
+        graph_response = g.user_client.table("scans") \
+            .select("graph_data") \
+            .eq("id", scan_id) \
+            .maybe_single() \
+            .execute()
+        
+        if not graph_response.data:
+            return jsonify({"error": "Scan not found or access denied"}), 404
+        
+        graph_data = graph_response.data.get("graph_data")
+        
+        if not graph_data:
+            # This is a valid state; the scan might be old or failed serialization
+            print(f"[✓] /api/scans/{scan_id}/attack-path: Scan found, but no graph data available.")
+            return jsonify({"error": "Attack path data not yet available for this scan."}), 404
+
+        # --- ADD THIS TYPE SAFETY CHECK ---
+        # Ensure graph_data is a dict, not a string (defensive programming)
+        if isinstance(graph_data, str):
+            try:
+                graph_data = json.loads(graph_data)
+                print(f"[WARN] /api/scans/{scan_id}/attack-path: Had to parse graph_data from string")
+            except json.JSONDecodeError as parse_err:
+                print(f"[ERROR] /api/scans/{scan_id}/attack-path: Invalid JSON in graph_data: {parse_err}")
+                return jsonify({"error": "Corrupted graph data"}), 500
+        # --- END TYPE SAFETY CHECK ---
+
+        print(f"[✓] /api/scans/{scan_id}/attack-path: Returned graph data for user {g.user_id}")
+        # The data is already stored as JSON, so just return it
+        return jsonify(graph_data), 200
+        
+    except Exception as e:
+        print(f"[ERROR] /api/scans/{scan_id}/attack-path: {str(e)}")
+        traceback.print_exc()
+        return jsonify({"error": "Failed to fetch attack path", "detail": str(e)}), 500
 
 # ============================================================================
 # 🚀 DEPRECATED ENDPOINTS (To be removed)

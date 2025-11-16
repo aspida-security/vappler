@@ -4,11 +4,10 @@ Celery Tasks for Vappler Security Scanner
 Handles asynchronous vulnerability scanning and attack path analysis
 """
 
-import requests, os, traceback, psycopg2
+import requests, os, traceback, psycopg2, json
+import networkx as nx
 from celery import Celery
 from scanner.mapper import NetworkMapper
-# ❌ REMOVE: We are no longer using the supabase-python client here
-# from supabase import create_client, Client 
 
 # ... (celery_app definition remains the same) ...
 celery_app = Celery(
@@ -28,32 +27,33 @@ celery_app.conf.update(
     worker_prefetch_multiplier=1,
 )
 
-# ✅ FIX: Get the DIRECT database connection string
-# This assumes your docker-compose.yml passes DATABASE_URL to the worker
-# If it doesn't, you must add it there.
 DATABASE_URL = os.environ.get("DATABASE_URL")
-
-# ✅ FIX: Get Supabase URL & Service Key for *requests* (for simple updates)
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY")
 
-def update_scan_status(scan_id, status, error_message=None):
+def update_scan_status(scan_id, status, error_message=None, graph_data=None): # <-- MODIFIED
     """Update scan record status in Supabase via PostgREST (requests is fine for this)"""
     if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
         print(f"[WARN] Cannot update scan status: Missing Supabase config")
         return
     
-    # ... (this function remains the same, as requests is fine for simple updates) ...
     url = f"{SUPABASE_URL}/rest/v1/scans?id=eq.{scan_id}"
     headers = {
         "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
-        "apikey": SUPABASE_SERVICE_KEY, # PostgREST requires apikey
+        "apikey": SUPABASE_SERVICE_KEY,
         "Content-Type": "application/json"
     }
     
     update_data = {"status": status}
     if error_message:
         update_data["description"] = f"Error: {error_message}"
+    
+    # --- ADDED THIS BLOCK ---
+    if graph_data:
+        # graph_data is already a dict; requests.json will serialize it correctly
+        update_data["graph_data"] = graph_data
+    # --- END ADDED BLOCK ---
+
     if status == "completed" or status == "failed":
         update_data["completed_at"] = "now()"
     
@@ -67,7 +67,7 @@ def update_scan_status(scan_id, status, error_message=None):
         print(f"[ERROR] update_scan_status exception: {e}")
 
 
-# ✅ FIX: Helper function to map severity strings to the DB enum
+# ... (map_severity function remains the same) ...
 def map_severity(severity_str):
     if not severity_str: return 'Info'
     lower = severity_str.lower()
@@ -81,7 +81,6 @@ def map_severity(severity_str):
 def run_nmap_scan(self, scan_id, target, workspace_id, scan_type='quick'):
     print(f"[*] Starting scan {scan_id} for target {target}")
     
-    # ✅ FIX: Check for DATABASE_URL
     if not DATABASE_URL:
         print("[!!!] WORKER ERROR: DATABASE_URL is not set. Cannot connect to PostgreSQL.")
         raise Exception("Worker missing DATABASE_URL environment variable.")
@@ -112,22 +111,18 @@ def run_nmap_scan(self, scan_id, target, workspace_id, scan_type='quick'):
             update_scan_status(scan_id, "failed", error_message=result['error'])
             return {**result, "scan_id": scan_id, "assets_saved": 0, "vulns_saved": 0}
 
-        # --- ✅ START REFACTORED SAVE LOGIC (using psycopg2) ---
+        # ... (Database save logic using psycopg2 remains exactly the same) ...
         
         assets_saved = 0
         vulns_saved = 0
-        
         host_list = result.get("vulnerability_details", [])
         if not host_list:
              print("[!] Mapper returned no vulnerability details. Nothing to save.")
 
-        # Connect to the database
         conn = psycopg2.connect(DATABASE_URL)
         cursor = conn.cursor()
-
         for host_data in host_list:
             try:
-                # 2. UPSERT ASSET
                 asset_payload = (
                     workspace_id,
                     host_data.get("ip_address"),
@@ -135,8 +130,6 @@ def run_nmap_scan(self, scan_id, target, workspace_id, scan_type='quick'):
                     True, # is_active
                     "now()" # last_scan_at
                 )
-                
-                # This raw SQL is faster and uses the constraints we built
                 sql_upsert_asset = """
                 INSERT INTO public.assets (workspace_id, ip_address, hostname, is_active, last_scan_at)
                 VALUES (%s, %s, %s, %s, %s)
@@ -146,15 +139,13 @@ def run_nmap_scan(self, scan_id, target, workspace_id, scan_type='quick'):
                     last_scan_at = EXCLUDED.last_scan_at
                 RETURNING id;
                 """
-                
                 cursor.execute(sql_upsert_asset, asset_payload)
-                asset_id = cursor.fetchone()[0] # Get the ID of the inserted/updated asset
+                asset_id = cursor.fetchone()[0]
                 assets_saved += 1
                 
-                # 3. PREPARE & UPSERT VULNERABILITIES for this asset
                 vuln_list = host_data.get("vulnerabilities", [])
                 if not vuln_list:
-                    continue # No vulns for this host, move to next host
+                    continue 
 
                 vuln_payloads = []
                 for vuln in vuln_list:
@@ -174,9 +165,7 @@ def run_nmap_scan(self, scan_id, target, workspace_id, scan_type='quick'):
                     ))
 
                 if vuln_payloads:
-                    # Use psycopg2's 'extras' for a fast bulk upsert
                     from psycopg2.extras import execute_values
-                    
                     sql_upsert_vulns = """
                     INSERT INTO public.vulnerabilities (
                         workspace_id, asset_id, scan_id, cve_id, title, description,
@@ -190,21 +179,30 @@ def run_nmap_scan(self, scan_id, target, workspace_id, scan_type='quick'):
                         status = 'open',
                         discovered_at = EXCLUDED.discovered_at;
                     """
-                    
                     execute_values(cursor, sql_upsert_vulns, vuln_payloads)
                     vulns_saved += len(vuln_payloads)
-
             except Exception as save_err:
-                conn.rollback() # Rollback this specific host
+                conn.rollback()
                 print(f"[!!!] Failed to save data for host {host_data.get('ip_address')}: {save_err}")
                 traceback.print_exc()
             else:
-                conn.commit() # Commit changes for this host
+                conn.commit()
 
-        # --- ✅ END REFACTORED SAVE LOGIC ---
-        
         print(f"[✓] Saved {assets_saved} assets and {vulns_saved} vulnerabilities")
-        update_scan_status(scan_id, "completed")
+
+        # --- ADDED THIS BLOCK ---
+        # After saving, serialize the graph and update the scan record
+        graph_json = None
+        try:
+            graph_data_dict = nx.node_link_data(mapper.graph)  # Already a dict
+            print(f"[*] Serialized attack path graph for scan {scan_id}")
+        except Exception as graph_err:
+            print(f"[WARN] Could not serialize graph for scan {scan_id}: {graph_err}")
+            graph_data_dict = None
+
+        # Pass dict directly, not JSON string
+        update_scan_status(scan_id, "completed", graph_data=graph_data_dict)
+        # --- END ADDED BLOCK ---
         
         return {
             "scan_id": scan_id,
@@ -216,7 +214,7 @@ def run_nmap_scan(self, scan_id, target, workspace_id, scan_type='quick'):
     
     except Exception as e:
         if conn:
-            conn.rollback() # Rollback any uncommitted changes
+            conn.rollback() 
         error_str = str(e)
         print(f"[ERROR] Scan {scan_id} failed: {error_str}")
         print(traceback.format_exc())
@@ -241,6 +239,11 @@ def generate_report(scan_id, workspace_id):
     """Generate PDF/HTML report for completed scan"""
     print(f"[*] Generating report for scan {scan_id}")
     # TODO: Implement report generation
+    # 1. Connect to DB
+    # 2. Query scans table for graph_data using scan_id
+    # 3. Parse graph_data to find attack path nodes
+    # 4. Query vulnerabilities table WHERE asset_id IN (path_nodes)
+    # 5. Compile Tier 2 Report
     return {"scan_id": scan_id, "status": "report_generated"}
 
 @celery_app.task
