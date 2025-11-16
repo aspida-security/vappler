@@ -1,4 +1,3 @@
-version: '3.8'
 
 services:
   redis:
@@ -32,6 +31,8 @@ services:
       # Flask environment
       - FLASK_ENV=development
       - DATABASE_URL=postgresql://postgres:postgres@host.docker.internal:63322/postgres
+    volumes:
+      - report-storage:/tmp  # ← NEW: Share /tmp with worker for PDF reports
 
   worker:
     build: .
@@ -52,8 +53,10 @@ services:
       - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
       # Redis connection
       - REDIS_URL=redis://vappler-redis:6379/0
-      # ✅ ADD THIS LINE:
+      # Database connection for report generation
       - DATABASE_URL=postgresql://postgres:postgres@host.docker.internal:63322/postgres
+    volumes:
+      - report-storage:/tmp  # ← NEW: Share /tmp with API for PDF reports
 
   test-target:
     image: "httpd:alpine"
@@ -66,3 +69,6 @@ services:
 networks:
   vappler-net:
     driver: bridge
+
+volumes:
+  report-storage:  # ← NEW: Named volume for sharing PDF reports between API and Worker

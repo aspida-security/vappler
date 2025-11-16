@@ -8,9 +8,9 @@ import traceback
 import jwt
 import json 
 from functools import wraps
-from flask import Flask, request, jsonify, g
+from flask import Flask, request, jsonify, g, send_from_directory
 from flask_cors import CORS
-from tasks import run_nmap_scan, celery_app
+from tasks import run_nmap_scan, celery_app, generate_report
 from supabase import create_client, Client
 
 app = Flask(__name__)
@@ -86,7 +86,7 @@ def auth_required(f):
     return decorated_function
 
 # ============================================================================
-# 🚀 CORE SCANNING ENDPOINTS (Existing)
+# 🚀 CORE SCANNING ENDPOINTS
 # ============================================================================
 
 @app.route('/api/test-auth', methods=['GET'])
@@ -418,6 +418,75 @@ def get_recent_scans():
         print(f"[ERROR] /api/scans/recent: {str(e)}")
         traceback.print_exc()
         return jsonify({"error": "Failed to fetch recent scans", "detail": str(e)}), 500
+
+# --- REPORTS ENDPOINT ---
+@app.route('/api/reports', methods=['POST'])
+@auth_required
+def create_report():
+    """
+    POST /api/reports
+    Triggers a Celery task to generate a PDF report for a scan.
+    """
+    try:
+        payload = request.get_json()
+        scan_id = payload.get('scan_id')
+        
+        if not scan_id:
+            return jsonify({"error": "scan_id is required"}), 400
+        
+        # We pass g.user_id so the report can be branded
+        # with the consultant's name
+        task = generate_report.delay(scan_id, g.user_id)
+        
+        print(f"[✓] /api/reports: Queued report generation task {task.id} for scan {scan_id}")
+        
+        return jsonify({
+            "message": "Report generation started.",
+            "task_id": task.id
+        }), 202
+
+    except Exception as e:
+        print(f"[ERROR] /api/reports: {str(e)}")
+        traceback.print_exc()
+        return jsonify({"error": "Failed to start report generation", "detail": str(e)}), 500
+# --- END REPORTS ENDPOINT ---
+
+# --- DOWNLOAD ENDPOINT ---
+@app.route('/api/reports/download', methods=['GET'])
+@auth_required # Ensures only authenticated users can download
+def download_report():
+    """
+    GET /api/reports/download?filename=...
+    Downloads the generated PDF from the container's /tmp directory.
+    NOTE: In a production, multi-container setup, this file
+    would be retrieved from S3 or a shared volume.
+    """
+    try:
+        filename = request.args.get('filename')
+        if not filename:
+            return jsonify({"error": "filename is required"}), 400
+        
+        # Basic security: prevent path traversal
+        if ".." in filename or not filename.startswith("report_") or not filename.endswith(".pdf"):
+             return jsonify({"error": "Invalid filename"}), 400
+        
+        # This serves the file from the /tmp directory *inside the api container*
+        # This works because the worker and api share the same /tmp
+        print(f"[✓] /api/reports/download: User {g.user_id} downloading {filename}")
+        return send_from_directory(
+            '/tmp', 
+            filename, 
+            as_attachment=True
+        )
+
+    except FileNotFoundError:
+        print(f"[ERROR] /api/reports/download: File not found: {filename}")
+        return jsonify({"error": "Report file not found. It may have expired or failed to generate."}), 404
+    except Exception as e:
+        print(f"[ERROR] /api/reports/download: {str(e)}")
+        traceback.print_exc()
+        return jsonify({"error": "Failed to download report", "detail": str(e)}), 500
+# --- END DOWNLOAD ENDPOINT ---
 
 @app.route('/api/scans/<scan_id>/attack-path', methods=['GET'])
 @auth_required

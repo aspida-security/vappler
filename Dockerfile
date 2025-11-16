@@ -5,7 +5,12 @@ FROM python:3.11
 WORKDIR /app
 
 # Update the package list and install Nmap
-RUN apt-get update && apt-get install -y nmap
+RUN apt-get update && apt-get install -y nmap \
+    libpango-1.0-0 \
+    libpangoft2-1.0-0 \
+    libcairo2 \
+    libgdk-pixbuf-2.0-0 \
+    libffi-dev
 
 # Copy our list of Python libraries into the container
 COPY requirements.txt .

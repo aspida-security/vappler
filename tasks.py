@@ -4,10 +4,13 @@ Celery Tasks for Vappler Security Scanner
 Handles asynchronous vulnerability scanning and attack path analysis
 """
 
-import requests, os, traceback, psycopg2, json
+import requests, os, traceback, psycopg2, json, datetime
+import psycopg2.extras
 import networkx as nx
 from celery import Celery
 from scanner.mapper import NetworkMapper
+from jinja2 import Environment, FileSystemLoader
+from weasyprint import HTML
 
 # ... (celery_app definition remains the same) ...
 celery_app = Celery(
@@ -30,6 +33,11 @@ celery_app.conf.update(
 DATABASE_URL = os.environ.get("DATABASE_URL")
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY")
+
+# --- Setup Jinja2 templating ---
+template_env = Environment(loader=FileSystemLoader('app/templates'))
+
+
 
 def update_scan_status(scan_id, status, error_message=None, graph_data=None): # <-- MODIFIED
     """Update scan record status in Supabase via PostgREST (requests is fine for this)"""
@@ -231,24 +239,192 @@ def run_nmap_scan(self, scan_id, target, workspace_id, scan_type='quick'):
             cursor.close()
             conn.close()
 
+# --- REPORT GENERATION TASK ---
+@celery_app.task(bind=True, max_retries=1)
+def generate_report(self, scan_id, user_id):
+    """
+    Generate PDF/HTML report for a completed scan
+    """
+    print(f"[*] Report task started for scan {scan_id} by user {user_id}")
+    if not DATABASE_URL:
+        raise Exception("Worker missing DATABASE_URL environment variable.")
+    
+    conn = None
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
 
-# ... (generate_report and cleanup_old_scans remain the same) ...
+        # ===== OPTIMIZATION - REPORT CACHING =====
+        # Check if report already exists (caching optimization)
+        pdf_filename = f"report_{scan_id}.pdf"
+        pdf_path = f"/tmp/{pdf_filename}"
+        
+        if os.path.exists(pdf_path):
+            print(f"[*] Report already exists, skipping regeneration: {pdf_path}")
+            return {
+                "scan_id": scan_id,
+                "status": "report_exists",
+                "report_path": pdf_path,
+                "report_filename": pdf_filename,
+                "cached": True  # Flag to indicate this was cached
+            }
+        # ===== END REPORT CACHING =====
 
-@celery_app.task
-def generate_report(scan_id, workspace_id):
-    """Generate PDF/HTML report for completed scan"""
-    print(f"[*] Generating report for scan {scan_id}")
-    # TODO: Implement report generation
-    # 1. Connect to DB
-    # 2. Query scans table for graph_data using scan_id
-    # 3. Parse graph_data to find attack path nodes
-    # 4. Query vulnerabilities table WHERE asset_id IN (path_nodes)
-    # 5. Compile Tier 2 Report
-    return {"scan_id": scan_id, "status": "report_generated"}
+        # Progress updates
+        self.update_state(state='PROGRESS', meta={'step': 'Fetching scan data', 'progress': 25})
+        # ... fetch scan data ...
+        # 1. Fetch Scan and Workspace data
+        cursor.execute(
+            """
+            SELECT s.id, s.name, s.graph_data, w.name as workspace_name
+            FROM public.scans s
+            JOIN public.workspaces w ON s.workspace_id = w.id
+            WHERE s.id = %s;
+            """, (scan_id,)
+        )
+        scan = cursor.fetchone()
+        if not scan:
+            raise Exception("Scan not found or access denied.")
+
+        # 2. Fetch User data for branding
+        cursor.execute(
+            "SELECT full_name, email FROM public.user_profiles WHERE id = %s;", (user_id,)
+        )
+        user = cursor.fetchone()
+
+        # Provide fallback values if user not found
+        consultant_name = user['full_name'] if user else "Vappler by Aspida Security Team"
+        consultant_email = user['email'] if user else "admin@aspidasecurity.io"
+        
+        # Progress updates
+        self.update_state(state='PROGRESS', meta={'step': 'Calculating attack path', 'progress': 50})
+        # ... calculate path ...
+        # 3. Parse Graph to find attack path
+        if not scan['graph_data']:
+            raise Exception("Scan has no attack path graph data to report.")
+            
+        graph_dict = json.loads(scan['graph_data']) if isinstance(scan['graph_data'], str) else scan['graph_data']
+        G = nx.node_link_graph(graph_dict)
+        
+        # Find nodes in graph (all are assets - no 'attacker' node exists)
+        nodes = list(G.nodes())
+        if not nodes:
+            raise Exception("Graph contains no nodes.")
+
+        # For MVP: Build attack path from all discovered assets
+        # Sort nodes by risk_weight if available (highest risk first)
+        # If no risk_weight, sort by degree centrality (most connected first)
+        real_nodes = [n for n in nodes if n != 'attacker']
+
+        if not real_nodes:
+            raise Exception("No real asset nodes found in graph (only 'attacker' node present).")
+
+        # Sort nodes by risk_weight if available (highest risk first)
+        try:
+            sorted_nodes = sorted(real_nodes, key=lambda n: G.nodes[n].get('risk_weight', 0), reverse=True)
+        except:
+            centrality = nx.degree_centrality(G)
+            sorted_nodes = sorted(real_nodes, key=lambda n: centrality.get(n, 0), reverse=True)
+
+        target_node = sorted_nodes[0]
+        path_nodes = [str(node) for node in sorted_nodes]  # Only real IPs now
+
+        print(f"[*] Attack path target (highest priority): {target_node}")
+        print(f"[*] Full attack path: {' → '.join(path_nodes)}")
+
+        # 4. Fetch vulnerabilities *only* on the attack path
+        # Match by IP address only (more reliable):
+        cursor.execute(
+            """
+            SELECT v.title, v.severity, v.cvss_score, v.description, v.port, v.service, 
+                a.hostname, a.ip_address
+            FROM public.vulnerabilities v
+            JOIN public.assets a ON v.asset_id = a.id
+            WHERE a.ip_address::text = ANY(%s)
+            ORDER BY v.cvss_score DESC;
+            """, (path_nodes,)
+        )
+        vulnerabilities = [dict(row) for row in cursor.fetchall()]
+
+        # 5. Prepare template context
+        context = {
+            "report_title": f"Security Assessment for {scan['workspace_name']}",
+            "scan_name": scan['name'],
+            "scan_id": str(scan_id),
+            "report_date": datetime.datetime.now().strftime("%B %d, %Y"),
+            "consultant_name": consultant_name,      
+            "consultant_email": consultant_email,    
+            "attack_path": " → ".join(path_nodes),
+            "critical_vulns": [v for v in vulnerabilities if v['severity'] == 'Critical'],
+            "high_vulns": [v for v in vulnerabilities if v['severity'] == 'High'],
+            "medium_vulns": [v for v in vulnerabilities if v['severity'] == 'Medium'],
+            "low_vulns": [v for v in vulnerabilities if v['severity'] == 'Low'],
+            "total_vulns": len(vulnerabilities),
+            "asset_count": len(path_nodes)
+        }
+
+        # 6. Load template and render HTML
+        # NOTE: This requires a 'report_template.html' file in the root directory
+        try:
+            template = template_env.get_template('report_template.html')
+            html_out = template.render(context)
+        except Exception as template_err:
+            print(f"[!!!] Report Error: Failed to load or render 'report_template.html': {template_err}")
+            raise Exception(f"Missing or invalid report template: {template_err}")
+
+        # Progress updates
+        self.update_state(state='PROGRESS', meta={'step': 'Rendering PDF', 'progress': 75})
+        # ... generate PDF ...
+        # 7. Convert HTML to PDF
+        # We save to a tmp directory; in production, this would go to S3.
+        # For the MVP, we'll save it locally in the container.
+        pdf_filename = f"report_{scan_id}.pdf"
+        pdf_path = f"/tmp/{pdf_filename}" # Save inside the container's /tmp dir
+        
+        HTML(string=html_out).write_pdf(pdf_path)
+
+        print(f"[✓] Report generated successfully: {pdf_path}")
+        
+        # Return final result with all details
+        return {
+            "status": "completed",
+            "progress": 100,
+            "scan_id": scan_id,
+            "report_path": pdf_path,
+            "report_filename": pdf_filename
+        }
+
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        error_str = str(e)
+        print(f"[ERROR] Report generation for {scan_id} failed: {error_str}")
+        print(traceback.format_exc())
+        raise self.retry(exc=e)
+    finally:
+        if conn:
+            cursor.close()
+            conn.close()
+# --- END TASK ---
 
 @celery_app.task
 def cleanup_old_scans():
     """Clean up old scan records (runs periodically)"""
     print("[*] Running cleanup task...")
     # TODO: Implement cleanup logic
+    return {"status": "cleanup_complete"}
+
+@celery_app.task
+def cleanup_old_reports():
+    """Delete reports older than 7 days"""
+    import glob
+    import time
+    
+    cutoff_time = time.time() - (7 * 24 * 60 * 60)  # 7 days ago
+    
+    for report_file in glob.glob("/tmp/report_*.pdf"):
+        if os.path.getmtime(report_file) < cutoff_time:
+            os.remove(report_file)
+            print(f"[*] Deleted old report: {report_file}")
+    
     return {"status": "cleanup_complete"}

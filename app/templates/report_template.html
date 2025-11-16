@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ report_title }}</title>
+    <style>
+        /* Base Styles */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #1f2937;
+            background: white;
+            padding: 40px;
+        }
+        
+        /* Typography */
+        h1 {
+            font-size: 32px;
+            font-weight: 700;
+            color: #1e40af;
+            border-bottom: 3px solid #3b82f6;
+            padding-bottom: 15px;
+            margin-bottom: 30px;
+        }
+        
+        h2 {
+            font-size: 24px;
+            font-weight: 600;
+            color: #1e3a8a;
+            margin-top: 40px;
+            margin-bottom: 20px;
+            padding-left: 15px;
+            border-left: 4px solid #3b82f6;
+        }
+        
+        h3 {
+            font-size: 18px;
+            font-weight: 600;
+            color: #374151;
+            margin-top: 25px;
+            margin-bottom: 15px;
+        }
+        
+        p {
+            margin-bottom: 15px;
+            color: #4b5563;
+        }
+        
+        /* Metadata Section */
+        .metadata {
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .metadata p {
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+        
+        .metadata strong {
+            color: #1f2937;
+            display: inline-block;
+            width: 120px;
+        }
+        
+        /* Executive Summary */
+        .executive-summary {
+            background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+            border-left: 4px solid #3b82f6;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+        }
+        
+        .executive-summary p {
+            color: #1e40af;
+            font-size: 16px;
+            line-height: 1.8;
+        }
+        
+        /* Statistics Cards */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin: 20px 0 30px 0;
+        }
+        
+        .stat-card {
+            background: white;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+        }
+        
+        .stat-card.critical {
+            border-color: #dc2626;
+            background: #fef2f2;
+        }
+        
+        .stat-card.high {
+            border-color: #ea580c;
+            background: #fff7ed;
+        }
+        
+        .stat-card.medium {
+            border-color: #ca8a04;
+            background: #fefce8;
+        }
+        
+        .stat-card.low {
+            border-color: #16a34a;
+            background: #f0fdf4;
+        }
+        
+        .stat-number {
+            font-size: 36px;
+            font-weight: 700;
+            display: block;
+            margin-bottom: 5px;
+        }
+        
+        .stat-card.critical .stat-number { color: #dc2626; }
+        .stat-card.high .stat-number { color: #ea580c; }
+        .stat-card.medium .stat-number { color: #ca8a04; }
+        .stat-card.low .stat-number { color: #16a34a; }
+        
+        .stat-label {
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #6b7280;
+        }
+        
+        /* Attack Path */
+        .attack-path {
+            background: #fefce8;
+            border: 2px solid #facc15;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        
+        .attack-path-label {
+            font-weight: 600;
+            color: #854d0e;
+            margin-bottom: 10px;
+        }
+        
+        .attack-path-sequence {
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            background: white;
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+            white-space: nowrap;
+            color: #1f2937;
+        }
+        
+        /* Tables */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            font-size: 14px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+        
+        thead {
+            background: #f3f4f6;
+        }
+        
+        th {
+            padding: 12px 15px;
+            text-align: left;
+            font-weight: 600;
+            color: #374151;
+            border-bottom: 2px solid #d1d5db;
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #e5e7eb;
+            vertical-align: top;
+        }
+        
+        tbody tr:hover {
+            background: #f9fafb;
+        }
+        
+        /* Severity Row Colors */
+        tr.critical {
+            background: #fef2f2;
+            border-left: 3px solid #dc2626;
+        }
+        
+        tr.critical td {
+            color: #7f1d1d;
+        }
+        
+        tr.high {
+            background: #fff7ed;
+            border-left: 3px solid #ea580c;
+        }
+        
+        tr.high td {
+            color: #7c2d12;
+        }
+        
+        tr.medium {
+            background: #fefce8;
+            border-left: 3px solid #ca8a04;
+        }
+        
+        tr.medium td {
+            color: #713f12;
+        }
+        
+        tr.low {
+            background: #f0fdf4;
+            border-left: 3px solid #16a34a;
+        }
+        
+        tr.low td {
+            color: #14532d;
+        }
+        
+        /* Badges */
+        .cvss-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 12px;
+        }
+        
+        .cvss-critical {
+            background: #dc2626;
+            color: white;
+        }
+        
+        .cvss-high {
+            background: #ea580c;
+            color: white;
+        }
+        
+        .cvss-medium {
+            background: #ca8a04;
+            color: white;
+        }
+        
+        .cvss-low {
+            background: #16a34a;
+            color: white;
+        }
+        
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            background: #f9fafb;
+            border-radius: 8px;
+            color: #6b7280;
+            font-style: italic;
+        }
+        
+        /* Page Breaks for PDF */
+        @page {
+            size: A4;
+            margin: 2cm;
+        }
+        
+        .page-break {
+            page-break-after: always;
+        }
+        
+        /* Footer */
+        .report-footer {
+            margin-top: 60px;
+            padding-top: 20px;
+            border-top: 2px solid #e5e7eb;
+            text-align: center;
+            color: #9ca3af;
+            font-size: 12px;
+        }
+        
+        /* Utility Classes */
+        .mb-10 { margin-bottom: 10px; }
+        .mb-20 { margin-bottom: 20px; }
+        .mb-30 { margin-bottom: 30px; }
+        .text-center { text-align: center; }
+        .font-mono { font-family: 'Courier New', monospace; }
+    </style>
+</head>
+<body>
+    <!-- Report Header -->
+    <h1>{{ report_title }}</h1>
+    
+    <!-- Metadata Section -->
+    <div class="metadata">
+        <p><strong>Prepared by:</strong> {{ consultant_name }} ({{ consultant_email }})</p>
+        <p><strong>Report Date:</strong> {{ report_date }}</p>
+        <p><strong>Scan ID:</strong> {{ scan_id }}</p>
+        <p><strong>Assets Scanned:</strong> {{ asset_count }}</p>
+    </div>
+    
+    <!-- Executive Summary -->
+    <div class="executive-summary">
+        <h2 style="margin-top: 0; border: none; padding: 0; color: #1e40af;">Executive Summary</h2>
+        <p>
+            This report details the findings of a comprehensive security assessment performed on <strong>{{ report_date }}</strong>. 
+            The scan identified a total of <strong>{{ total_vulns }}</strong> prioritized vulnerabilities across 
+            <strong>{{ asset_count }}</strong> critical assets that form the most likely path for an attacker to exploit.
+        </p>
+        <p>
+            Immediate remediation is recommended for all <strong>Critical</strong> and <strong>High</strong> severity 
+            findings to reduce organizational risk exposure.
+        </p>
+    </div>
+    
+    <!-- Vulnerability Statistics -->
+    <h2>Vulnerability Breakdown</h2>
+    <div class="stats-grid">
+        <div class="stat-card critical">
+            <span class="stat-number">{{ critical_vulns|length }}</span>
+            <span class="stat-label">Critical</span>
+        </div>
+        <div class="stat-card high">
+            <span class="stat-number">{{ high_vulns|length }}</span>
+            <span class="stat-label">High</span>
+        </div>
+        <div class="stat-card medium">
+            <span class="stat-number">{{ medium_vulns|length }}</span>
+            <span class="stat-label">Medium</span>
+        </div>
+        <div class="stat-card low">
+            <span class="stat-number">{{ low_vulns|length }}</span>
+            <span class="stat-label">Low</span>
+        </div>
+    </div>
+    
+    <!-- Attack Path Visualization -->
+    <h2>Prioritized Attack Path</h2>
+    <div class="attack-path">
+        <div class="attack-path-label">
+            The following attack path was identified as the path of least resistance for an attacker, 
+            based on vulnerability severity and known exploits. Remediation should focus on these assets first.
+        </div>
+        <div class="attack-path-sequence">
+            Attacker → {{ attack_path }}
+        </div>
+    </div>
+    
+    <!-- Critical Findings -->
+    <div class="page-break"></div>
+    <h2>Critical Findings ({{ critical_vulns|length }})</h2>
+    {% if critical_vulns|length > 0 %}
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 35%;">Vulnerability</th>
+                <th style="width: 20%;">Affected Asset</th>
+                <th style="width: 10%;">CVSS</th>
+                <th style="width: 15%;">Port/Service</th>
+                <th style="width: 20%;">Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for vuln in critical_vulns %}
+            <tr class="critical">
+                <td><strong>{{ vuln.title }}</strong></td>
+                <td class="font-mono">{{ vuln.hostname or vuln.ip_address }}</td>
+                <td>
+                    <span class="cvss-badge cvss-critical">{{ vuln.cvss_score }}</span>
+                </td>
+                <td>{{ vuln.port }}/{{ vuln.service }}</td>
+                <td style="font-size: 12px;">{{ vuln.description[:100] }}{% if vuln.description|length > 100 %}...{% endif %}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">No Critical vulnerabilities found.</div>
+    {% endif %}
+    
+    <!-- High Findings -->
+    <div class="page-break"></div>
+    <h2>High Findings ({{ high_vulns|length }})</h2>
+    {% if high_vulns|length > 0 %}
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 35%;">Vulnerability</th>
+                <th style="width: 20%;">Affected Asset</th>
+                <th style="width: 10%;">CVSS</th>
+                <th style="width: 15%;">Port/Service</th>
+                <th style="width: 20%;">Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for vuln in high_vulns %}
+            <tr class="high">
+                <td><strong>{{ vuln.title }}</strong></td>
+                <td class="font-mono">{{ vuln.hostname or vuln.ip_address }}</td>
+                <td>
+                    <span class="cvss-badge cvss-high">{{ vuln.cvss_score }}</span>
+                </td>
+                <td>{{ vuln.port }}/{{ vuln.service }}</td>
+                <td style="font-size: 12px;">{{ vuln.description[:100] }}{% if vuln.description|length > 100 %}...{% endif %}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">No High vulnerabilities found.</div>
+    {% endif %}
+    
+    <!-- Medium Findings -->
+    <div class="page-break"></div>
+    <h2>Medium Findings ({{ medium_vulns|length }})</h2>
+    {% if medium_vulns|length > 0 %}
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 35%;">Vulnerability</th>
+                <th style="width: 20%;">Affected Asset</th>
+                <th style="width: 10%;">CVSS</th>
+                <th style="width: 15%;">Port/Service</th>
+                <th style="width: 20%;">Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for vuln in medium_vulns %}
+            <tr class="medium">
+                <td><strong>{{ vuln.title }}</strong></td>
+                <td class="font-mono">{{ vuln.hostname or vuln.ip_address }}</td>
+                <td>
+                    <span class="cvss-badge cvss-medium">{{ vuln.cvss_score }}</span>
+                </td>
+                <td>{{ vuln.port }}/{{ vuln.service }}</td>
+                <td style="font-size: 12px;">{{ vuln.description[:100] }}{% if vuln.description|length > 100 %}...{% endif %}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">No Medium vulnerabilities found.</div>
+    {% endif %}
+    
+    <!-- Low Findings -->
+    <div class="page-break"></div>
+    <h2>Low Findings ({{ low_vulns|length }})</h2>
+    {% if low_vulns|length > 0 %}
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 35%;">Vulnerability</th>
+                <th style="width: 20%;">Affected Asset</th>
+                <th style="width: 10%;">CVSS</th>
+                <th style="width: 15%;">Port/Service</th>
+                <th style="width: 20%;">Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for vuln in low_vulns %}
+            <tr class="low">
+                <td><strong>{{ vuln.title }}</strong></td>
+                <td class="font-mono">{{ vuln.hostname or vuln.ip_address }}</td>
+                <td>
+                    <span class="cvss-badge cvss-low">{{ vuln.cvss_score }}</span>
+                </td>
+                <td>{{ vuln.port }}/{{ vuln.service }}</td>
+                <td style="font-size: 12px;">{{ vuln.description[:100] }}{% if vuln.description|length > 100 %}...{% endif %}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">No Low vulnerabilities found.</div>
+    {% endif %}
+    
+    <!-- Report Footer -->
+    <div class="report-footer">
+        <p>This report was generated automatically by Vappler Security Scanner.</p>
+        <p>For questions or clarifications, please contact {{ consultant_email }}</p>
+        <p>&copy; 2025 Vappler by Aspida Security | Confidential & Proprietary</p>
+    </div>
+</body>
+</html>
